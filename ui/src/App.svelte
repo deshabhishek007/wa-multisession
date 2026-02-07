@@ -5,23 +5,29 @@
   import Dashboard from './components/Dashboard.svelte';
 
   let authenticated = false;
+  let user = null;
   let checking = true;
 
   onMount(async () => {
     try {
-      authenticated = await checkAuth();
+      const { authenticated: auth, user: u } = await checkAuth();
+      authenticated = auth;
+      user = u;
     } catch {
       authenticated = false;
+      user = null;
     }
     checking = false;
   });
 
-  function onLogin() {
+  function onLogin(ev) {
     authenticated = true;
+    user = ev.detail?.user ?? null;
   }
 
   function onLogout() {
     authenticated = false;
+    user = null;
   }
 </script>
 
@@ -32,7 +38,7 @@
     </div>
   </div>
 {:else if authenticated}
-  <Dashboard on:logout={onLogout} />
+  <Dashboard {user} on:logout={onLogout} />
 {:else}
   <Login on:login={onLogin} />
 {/if}

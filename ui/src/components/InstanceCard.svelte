@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
 
   export let instance = { id: '', status: '', qr: null };
+  export let canDelete = true;
 
   const dispatch = createEventDispatcher();
 
@@ -46,7 +47,9 @@
     <p style="color: #10b981; font-weight: 600; text-align: center; margin: 15px 0;">✓ Connected</p>
   {/if}
 
-  <div class="instance-actions">
-    <button type="button" class="danger" on:click={onDelete}>Delete</button>
-  </div>
+  {#if canDelete}
+    <div class="instance-actions">
+      <button type="button" class="danger" on:click={onDelete}>Delete</button>
+    </div>
+  {/if}
 </div>

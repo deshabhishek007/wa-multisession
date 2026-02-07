@@ -17,9 +17,9 @@
     }
     loading = true;
     try {
-      const ok = await login(username.trim(), password);
-      if (ok) {
-        dispatch('login');
+      const result = await login(username.trim(), password);
+      if (result.ok) {
+        dispatch('login', { user: result.user });
       } else {
         error = 'Invalid credentials';
       }

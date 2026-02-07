@@ -9,7 +9,13 @@ export function getWsUrl() {
 export async function checkAuth() {
   const res = await fetch(`${API_BASE}/api/check-auth`);
   const data = await res.json();
-  return data.authenticated;
+  return { authenticated: data.authenticated, user: data.user || null };
+}
+
+export async function getMe() {
+  const res = await fetch(`${API_BASE}/api/me`);
+  if (!res.ok) return null;
+  return res.json();
 }
 
 export async function login(username, password) {
@@ -18,7 +24,9 @@ export async function login(username, password) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password })
   });
-  return res.ok;
+  if (!res.ok) return { ok: false };
+  const data = await res.json();
+  return { ok: true, user: data.user };
 }
 
 export async function logout() {
@@ -46,4 +54,49 @@ export async function createInstance(instanceId) {
 export async function deleteInstance(instanceId) {
   const res = await fetch(`${API_BASE}/api/instances/${instanceId}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete instance');
+}
+
+export async function getUsers() {
+  const res = await fetch(`${API_BASE}/api/users`);
+  if (!res.ok) throw new Error('Failed to load users');
+  return res.json();
+}
+
+export async function createUser(username, password, role) {
+  const res = await fetch(`${API_BASE}/api/users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password, role })
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Failed to create user');
+  }
+  return res.json();
+}
+
+export async function assignInstanceToUser(userId, instanceId) {
+  const res = await fetch(`${API_BASE}/api/users/${userId}/instances`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ instanceId })
+  });
+  if (!res.ok) throw new Error('Failed to assign instance');
+}
+
+export async function removeInstanceFromUser(userId, instanceId) {
+  const res = await fetch(`${API_BASE}/api/users/${userId}/instances/${instanceId}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to remove assignment');
+}
+
+export async function getInstanceUsers(instanceId) {
+  const res = await fetch(`${API_BASE}/api/instances/${instanceId}/users`);
+  if (!res.ok) throw new Error('Failed to load users');
+  return res.json();
+}
+
+export async function getUserInstances(userId) {
+  const res = await fetch(`${API_BASE}/api/users/${userId}/instances`);
+  if (!res.ok) throw new Error('Failed to load assignments');
+  return res.json();
 }

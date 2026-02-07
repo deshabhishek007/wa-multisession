@@ -1,6 +1,5 @@
 import express from 'express';
 import session from 'express-session';
-import bcrypt from 'bcrypt';
 import whatsapp from 'whatsapp-web.js';
 import QRCode from 'qrcode';
 import { WebSocketServer } from 'ws';
@@ -10,16 +9,27 @@ import { dirname, join } from 'path';
 import { readFile, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import dotenv from 'dotenv';
+import * as db from './db.js';
 
 dotenv.config();
+db.initDb();
+
 const { Client, LocalAuth } = whatsapp;
 const app = express();
 const server = createServer(app);
-const wss = new WebSocketServer({ server });
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const INSTANCES_FILE = join(__dirname, 'instances.json');
+
+// Session must be before WebSocket upgrade so we can use it in upgrade handler
+const sessionMiddleware = session({
+  secret: process.env.SESSION_SECRET || 'your-secret-key-change-this',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: false }
+});
+app.use(sessionMiddleware);
 
 // Middleware
 app.use(express.json());
@@ -29,19 +39,6 @@ const uiDist = join(__dirname, 'ui', 'dist');
 if (existsSync(uiDist)) {
   app.use(express.static(uiDist));
 }
-
-// Session configuration
-app.use(session({
-  secret: 'your-secret-key-change-this',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { secure: false } // Set to true if using HTTPS
-}));
-
-// Simple user storage (replace with database in production)
-const users = {
-  admin: await bcrypt.hash('admin123', 10) // username: admin, password: admin123
-};
 
 // WhatsApp instances storage
 const whatsappInstances = new Map();
@@ -65,23 +62,36 @@ async function saveInstanceNames(names) {
 
 // Authentication middleware
 function requireAuth(req, res, next) {
-  if (req.session.userId) {
-    next();
-  } else {
-    res.status(401).json({ error: 'Unauthorized' });
+  if (!req.session.userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
   }
+  const user = db.getUserById(req.session.userId);
+  if (!user) {
+    req.session.destroy();
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  req.user = user;
+  next();
+}
+
+function requireAdmin(req, res, next) {
+  requireAuth(req, res, () => {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    next();
+  });
 }
 
 // Routes
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
-  
-  if (users[username] && await bcrypt.compare(password, users[username])) {
-    req.session.userId = username;
-    res.json({ success: true });
-  } else {
-    res.status(401).json({ error: 'Invalid credentials' });
+  const user = db.verifyLogin(username, password);
+  if (!user) {
+    return res.status(401).json({ error: 'Invalid credentials' });
   }
+  req.session.userId = user.id;
+  res.json({ success: true, user: { id: user.id, username: user.username, role: user.role } });
 });
 
 app.post('/api/logout', (req, res) => {
@@ -90,12 +100,27 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.get('/api/check-auth', (req, res) => {
-  res.json({ authenticated: !!req.session.userId });
+  if (!req.session.userId) {
+    return res.json({ authenticated: false });
+  }
+  const user = db.getUserById(req.session.userId);
+  if (!user) {
+    req.session.destroy();
+    return res.json({ authenticated: false });
+  }
+  res.json({ authenticated: true, user: { id: user.id, username: user.username, role: user.role } });
 });
 
-// WhatsApp instance management
+app.get('/api/me', requireAuth, (req, res) => {
+  res.json(req.user);
+});
+
+// WhatsApp instance management (filtered by role)
 app.get('/api/instances', requireAuth, (req, res) => {
-  const instances = Array.from(whatsappInstances.keys()).map(id => ({
+  const allIds = Array.from(whatsappInstances.keys());
+  const allowedIds = db.getInstanceIdsForUser(req.user.id, req.user.role);
+  const ids = allowedIds === null ? allIds : allIds.filter(id => allowedIds.includes(id));
+  const instances = ids.map(id => ({
     id,
     status: whatsappInstances.get(id).status
   }));
@@ -149,7 +174,7 @@ async function createAndInitializeInstance(instanceId) {
   await client.initialize();
 }
 
-app.post('/api/instances', requireAuth, async (req, res) => {
+app.post('/api/instances', requireAdmin, async (req, res) => {
   const { instanceId } = req.body;
 
   if (!instanceId) {
@@ -175,7 +200,7 @@ app.post('/api/instances', requireAuth, async (req, res) => {
   }
 });
 
-app.delete('/api/instances/:instanceId', requireAuth, async (req, res) => {
+app.delete('/api/instances/:instanceId', requireAdmin, async (req, res) => {
   const { instanceId } = req.params;
 
   if (!whatsappInstances.has(instanceId)) {
@@ -198,39 +223,119 @@ app.delete('/api/instances/:instanceId', requireAuth, async (req, res) => {
   }
 });
 
-// WebSocket connection handling
+// User management (admin only)
+app.get('/api/users', requireAdmin, (req, res) => {
+  res.json(db.getAllUsers());
+});
+
+app.post('/api/users', requireAdmin, (req, res) => {
+  const { username, password, role } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password required' });
+  }
+  try {
+    const id = db.createUser(username, password, role === 'admin' ? 'admin' : 'user');
+    res.status(201).json({ id, username, role: role === 'admin' ? 'admin' : 'user' });
+  } catch (e) {
+    if (e.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return res.status(400).json({ error: 'Username already exists' });
+    }
+    throw e;
+  }
+});
+
+app.post('/api/users/:userId/instances', requireAdmin, (req, res) => {
+  const userId = Number(req.params.userId);
+  const { instanceId } = req.body;
+  if (!instanceId || !whatsappInstances.has(instanceId)) {
+    return res.status(400).json({ error: 'Valid instanceId required' });
+  }
+  const user = db.getUserById(userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  db.assignInstanceToUser(userId, instanceId);
+  res.json({ success: true });
+});
+
+app.delete('/api/users/:userId/instances/:instanceId', requireAdmin, (req, res) => {
+  const userId = Number(req.params.userId);
+  const { instanceId } = req.params;
+  db.removeInstanceFromUser(userId, instanceId);
+  res.json({ success: true });
+});
+
+app.get('/api/instances/:instanceId/users', requireAdmin, (req, res) => {
+  const { instanceId } = req.params;
+  if (!whatsappInstances.has(instanceId)) {
+    return res.status(404).json({ error: 'Instance not found' });
+  }
+  res.json(db.getUsersForInstance(instanceId));
+});
+
+app.get('/api/users/:userId/instances', requireAdmin, (req, res) => {
+  const userId = Number(req.params.userId);
+  const user = db.getUserById(userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.json(db.getAssignmentsForUser(userId));
+});
+
+// WebSocket: use noServer so we can run session on upgrade
+const wss = new WebSocketServer({ noServer: true });
+
+server.on('upgrade', (request, socket, head) => {
+  const noop = () => {};
+  const res = {
+    setHeader: noop,
+    getHeader: noop,
+    writeHead: noop,
+    end(chunk, encoding, cb) {
+      if (typeof encoding === 'function') cb = encoding;
+      else if (typeof cb === 'function') cb();
+    }
+  };
+  sessionMiddleware(request, res, () => {
+    if (!request.session?.userId) {
+      socket.destroy();
+      return;
+    }
+    const user = db.getUserById(request.session.userId);
+    if (!user) {
+      socket.destroy();
+      return;
+    }
+    request.user = user;
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit('connection', ws, request);
+    });
+  });
+});
+
 wss.on('connection', (ws, req) => {
+  const user = req.user;
   let currentInstanceId = null;
-  let authenticated = false;
-  
+  let authenticated = true; // already verified in upgrade
+
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message);
-      
-      // Handle authentication
+
       if (data.type === 'auth') {
-        // In a real app, validate session token here
-        authenticated = true;
         ws.send(JSON.stringify({ type: 'auth_success' }));
         return;
       }
-      
-      if (!authenticated) {
-        ws.send(JSON.stringify({ type: 'error', message: 'Not authenticated' }));
-        return;
-      }
-      
-      // Subscribe to instance updates
+
       if (data.type === 'subscribe' && data.instanceId) {
-        currentInstanceId = data.instanceId;
-        
+        const instanceId = data.instanceId;
+        if (!db.userCanAccessInstance(user.id, user.role, instanceId)) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Access denied to this instance' }));
+          return;
+        }
+        currentInstanceId = instanceId;
+
         if (!instanceClients.has(currentInstanceId)) {
           instanceClients.set(currentInstanceId, new Set());
         }
-        
         instanceClients.get(currentInstanceId).add(ws);
-        
-        // Send current state if available
+
         if (whatsappInstances.has(currentInstanceId)) {
           const instance = whatsappInstances.get(currentInstanceId);
           ws.send(JSON.stringify({
@@ -245,7 +350,7 @@ wss.on('connection', (ws, req) => {
       console.error('WebSocket message error:', error);
     }
   });
-  
+
   ws.on('close', () => {
     if (currentInstanceId && instanceClients.has(currentInstanceId)) {
       instanceClients.get(currentInstanceId).delete(ws);
