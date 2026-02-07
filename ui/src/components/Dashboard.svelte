@@ -22,6 +22,7 @@
   let newUserRole = 'user';
   let userAssignments = {}; // userId -> instanceId[]
   let assignInstanceId = {}; // userId -> selected instance id for dropdown
+  let newPasswordByUser = {}; // userId -> string (for change password)
 
   function setError(msg) {
     error = msg;
@@ -181,6 +182,35 @@
     }
   }
 
+  async function handleChangePassword(userId) {
+    const password = (newPasswordByUser[userId] || '').trim();
+    if (!password) {
+      setError('Enter a new password');
+      return;
+    }
+    try {
+      await api.changeUserPassword(userId, password);
+      newPasswordByUser = { ...newPasswordByUser, [userId]: '' };
+      setSuccess('Password updated');
+    } catch (e) {
+      setError(e.message || 'Failed to change password');
+    }
+  }
+
+  async function handleDeleteUser(userId) {
+    if (!confirm('Permanently delete this user? Their instance assignments will be removed.')) return;
+    try {
+      const result = await api.deleteUser(userId);
+      users = users.filter((u) => u.id !== userId);
+      userAssignments = { ...userAssignments };
+      delete userAssignments[userId];
+      userAssignments = userAssignments;
+      setSuccess(result && result.deleted === false ? 'User removed' : 'User deleted');
+    } catch (e) {
+      setError(e.message || 'Failed to delete user');
+    }
+  }
+
   async function handleLogout() {
     await api.logout();
     if (ws) ws.close();
@@ -276,6 +306,30 @@
               <strong>{u.username}</strong>
               <span class="status-badge status-{u.role === 'admin' ? 'ready' : 'initializing'}">{u.role}</span>
             </div>
+            <div class="user-actions">
+              <div class="password-change">
+                <input
+                  type="password"
+                  placeholder="New password"
+                  value={newPasswordByUser[u.id] ?? ''}
+                  on:input={(e) => {
+                    newPasswordByUser[u.id] = e.currentTarget.value;
+                    newPasswordByUser = newPasswordByUser;
+                  }}
+                />
+                <button type="button" class="secondary" style="padding: 6px 12px; font-size: 13px;" on:click={() => handleChangePassword(u.id)}>Change password</button>
+              </div>
+              <button
+                type="button"
+                class="danger"
+                style="padding: 6px 12px; font-size: 13px;"
+                on:click={() => handleDeleteUser(u.id)}
+                disabled={u.id === user?.id}
+                title={u.id === user?.id ? 'Cannot delete your own account' : 'Delete user'}
+              >
+                Delete user
+              </button>
+            </div>
             {#if u.role === 'user'}
               <div class="user-assignments">
                 {#each userAssignments[u.id] || [] as instanceId}
@@ -332,6 +386,22 @@
     align-items: center;
     gap: 10px;
     min-width: 140px;
+  }
+  .user-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .password-change {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .password-change input {
+    width: 120px;
+    padding: 6px 10px;
+    font-size: 13px;
   }
   .user-assignments {
     display: flex;

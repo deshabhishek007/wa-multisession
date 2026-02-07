@@ -31,14 +31,19 @@ async function apiFetch(url, options = {}) {
   log('info', `${method} ${url}`, { body: options.body ? sanitizeBody(options.body) : undefined });
 
   // Send cookies cross-origin (e.g. Vite dev 5173 → API 3000) so session auth works
-  const fetchOptions = { ...options, credentials: 'include' };
+  const { expected404, ...rest } = options;
+  const fetchOptions = { ...rest, credentials: 'include' };
 
   try {
     const res = await fetch(url, fetchOptions);
     const duration = Math.round(performance.now() - start);
     const meta = { status: res.status, duration: `${duration}ms` };
     if (!res.ok) {
-      log('error', `${method} ${url} → ${res.status}`, meta);
+      if (res.status === 404 && expected404) {
+        log('info', `${method} ${url} → 404 (already gone)`, meta);
+      } else {
+        log('error', `${method} ${url} → ${res.status}`, meta);
+      }
     } else {
       log('info', `${method} ${url} → ${res.status}`, meta);
     }
@@ -149,4 +154,25 @@ export async function getUserInstances(userId) {
   const res = await apiFetch(`${API_BASE}/api/users/${userId}/instances`);
   if (!res.ok) throw new Error('Failed to load assignments');
   return res.json();
+}
+
+export async function changeUserPassword(userId, password) {
+  const res = await apiFetch(`${API_BASE}/api/users/${userId}/password`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password })
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Failed to change password');
+  }
+}
+
+export async function deleteUser(userId) {
+  const res = await apiFetch(`${API_BASE}/api/users/${userId}`, { method: 'DELETE' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to delete user');
+  }
+  return { deleted: data.deleted !== false };
 }

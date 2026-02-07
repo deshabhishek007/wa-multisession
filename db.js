@@ -19,6 +19,7 @@ export function getDb() {
 
 export function initDb() {
   const database = getDb();
+  database.pragma('foreign_keys = ON');
   database.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -108,4 +109,22 @@ export function getUsersForInstance(instanceId) {
   return getDb()
     .prepare('SELECT u.id, u.username, u.role FROM users u JOIN user_instances ui ON u.id = ui.user_id WHERE ui.instance_id = ?')
     .all(instanceId);
+}
+
+export function updateUserPassword(userId, newPassword) {
+  const hash = bcrypt.hashSync(newPassword, 10);
+  const result = getDb().prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, userId);
+  return result.changes > 0;
+}
+
+export function deleteUser(userId) {
+  const id = typeof userId === 'number' ? userId : parseInt(userId, 10);
+  if (Number.isNaN(id)) return false;
+  const result = getDb().prepare('DELETE FROM users WHERE id = ?').run(id);
+  return result.changes > 0;
+}
+
+export function getAdminCount() {
+  const row = getDb().prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").get();
+  return row?.n ?? 0;
 }

@@ -290,6 +290,42 @@ app.get('/api/users/:userId/instances', requireAdmin, (req, res) => {
   res.json(db.getAssignmentsForUser(userId));
 });
 
+app.patch('/api/users/:userId/password', requireAdmin, (req, res) => {
+  const userId = Number(req.params.userId);
+  const { password } = req.body;
+  if (!password || String(password).length < 1) {
+    return res.status(400).json({ error: 'Password required' });
+  }
+  const user = db.getUserById(userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  db.updateUserPassword(userId, password);
+  res.json({ success: true });
+});
+
+app.delete('/api/users/:userId', requireAdmin, (req, res) => {
+  const userId = parseInt(req.params.userId, 10);
+  if (Number.isNaN(userId)) {
+    return res.status(400).json({ error: 'Invalid user ID' });
+  }
+  const currentId = Number(req.user.id);
+  if (userId === currentId) {
+    return res.status(400).json({ error: 'Cannot delete your own account' });
+  }
+  const target = db.getUserById(userId);
+  if (!target) {
+    return res.json({ success: true, deleted: false });
+  }
+  if (target.role === 'admin' && db.getAdminCount() <= 1) {
+    return res.status(400).json({ error: 'Cannot delete the last admin' });
+  }
+  const deleted = db.deleteUser(userId);
+  if (!deleted) {
+    console.error('deleteUser failed for id', userId);
+    return res.status(500).json({ error: 'Failed to delete user' });
+  }
+  res.json({ success: true, deleted: true });
+});
+
 // WebSocket: use noServer so we can run session on upgrade
 const wss = new WebSocketServer({ noServer: true });
 
