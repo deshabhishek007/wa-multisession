@@ -1,0 +1,7 @@
+node_modules
+.env
+.wwebjs_auth/
+package-lock.json
+.wwebjs_cache
+pnpm-lock.yaml
+pnpm-workspace.yaml
