@@ -96,6 +96,7 @@ For instance-scoped routes you can use an **instance API key** instead of a sess
 | `GET` | `/api/instances/:instanceId/api-key` | Session or API key | Get instance API key. |
 | `POST` | `/api/instances/:instanceId/api-key/regenerate` | Session or API key | Regenerate instance API key. |
 | `POST` | `/api/instances/:instanceId/send-message` | Session or API key | Send a WhatsApp message. |
+| `POST` | `/api/instances/:instanceId/send-file` | Session or API key | Send a file with optional caption (filename + base64). |
 | `GET` | `/api/instances/:instanceId/users` | Admin | List users assigned to instance. |
 
 ### GET /api/instances
@@ -219,6 +220,43 @@ curl -X POST "http://localhost:3000/api/instances/client1/send-message" \
   -H "X-API-Key: YOUR_INSTANCE_API_KEY" \
   -d '{"to": "919876543210", "message": "Hello"}'
 ```
+
+---
+
+### POST /api/instances/:instanceId/send-file
+
+**Auth:** Session (with access to this instance) or instance API key.
+
+Send a file with optional text caption. The file is provided as a base64 string.
+
+**Request body:**
+
+```json
+{
+  "to": "919876543210",
+  "filename": "document.pdf",
+  "fileBase64": "JVBERi0xLjQK...",
+  "caption": "Optional caption text",
+  "mimetype": "application/pdf"
+}
+```
+
+- **to:** Phone number with country code, digits only.
+- **filename:** Original filename (used for display and to infer mimetype if `mimetype` is omitted).
+- **fileBase64:** Base64-encoded file content. Optional data-URL prefix (e.g. `data:application/pdf;base64,`) is stripped if present.
+- **caption:** Optional. Text sent as the message caption with the file.
+- **mimetype:** Optional. MIME type (e.g. `image/png`, `application/pdf`). If omitted, inferred from `filename` extension.
+
+**Success (200):**
+
+```json
+{
+  "success": true,
+  "messageId": "true_1234567890@c.us_3EB0XXXXX"
+}
+```
+
+**Errors:** `400` — `to`, `filename` and `fileBase64` required / Invalid base64. `401` — Invalid API key or access. `404` — Instance not found. `503` — Instance not ready. `500` — Send failed.
 
 ---
 

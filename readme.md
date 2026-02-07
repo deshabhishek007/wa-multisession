@@ -77,6 +77,9 @@ whatsapp-multi-instance/
 
 ## API Endpoints
 
+postman link 
+https://sj-dev-team.postman.co/workspace/SF_Practice~23d7639c-eba6-482b-871c-758a97782e4b/collection/27547824-0b9df179-bc04-47c3-9a07-79f6a6653810?action=share&creator=27547824
+
 ### Authentication
 - `POST /api/login` - Login with username/password
 - `POST /api/logout` - Logout current session

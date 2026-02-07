@@ -20,7 +20,33 @@ function generateApiKey() {
 dotenv.config();
 db.initDb();
 
-const { Client, LocalAuth } = whatsapp;
+const { Client, LocalAuth, MessageMedia } = whatsapp;
+
+const MIME_BY_EXT = {
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  mp4: 'video/mp4',
+  mp3: 'audio/mpeg',
+  ogg: 'audio/ogg',
+  wav: 'audio/wav',
+  txt: 'text/plain',
+  csv: 'text/csv',
+  json: 'application/json'
+};
+function getMimetype(filename, explicit) {
+  if (explicit && typeof explicit === 'string') return explicit;
+  if (!filename || typeof filename !== 'string') return 'application/octet-stream';
+  const ext = filename.split('.').pop()?.toLowerCase();
+  return MIME_BY_EXT[ext] || 'application/octet-stream';
+}
 const app = express();
 const server = createServer(app);
 const __filename = fileURLToPath(import.meta.url);
@@ -288,19 +314,64 @@ app.post('/api/instances/:instanceId/api-key/regenerate', requireInstanceAccess,
 // Send message (session or API key auth). Body: { to: string (phone with country code), message: string }
 app.post('/api/instances/:instanceId/send-message', requireInstanceAccess, async (req, res) => {
   const { to, message } = req.body;
+  const instanceId = req.instanceId;
+  console.log(`[send-message] instance=${instanceId} to=${to || '(missing)'} messageLength=${message != null ? String(message).length : 0}`);
+
   if (!to || !message || typeof message !== 'string') {
     return res.status(400).json({ error: 'to and message required' });
   }
-  const instance = whatsappInstances.get(req.instanceId);
+  const instance = whatsappInstances.get(instanceId);
   if (instance.status !== 'ready') {
+    console.log(`[send-message] instance=${instanceId} rejected: not ready (status=${instance?.status})`);
     return res.status(503).json({ error: 'Instance not ready. Wait for WhatsApp to connect.' });
   }
   const chatId = String(to).replace(/\D/g, '') + '@c.us';
   try {
     const sent = await instance.client.sendMessage(chatId, message);
+    console.log(`[send-message] instance=${instanceId} to=${chatId} success messageId=${sent.id?._serialized || '(n/a)'}`);
     res.json({ success: true, messageId: sent.id?._serialized || null });
   } catch (err) {
+    console.log(`[send-message] instance=${instanceId} to=${chatId} error: ${err.message}`);
     res.status(500).json({ error: err.message || 'Failed to send message' });
+  }
+});
+
+// Send file with optional caption. Body: { to, filename, fileBase64, caption?, mimetype? }
+app.post('/api/instances/:instanceId/send-file', requireInstanceAccess, async (req, res) => {
+  const { to, filename, fileBase64, caption, mimetype } = req.body;
+  const instanceId = req.instanceId;
+  console.log(`[send-file] instance=${instanceId} to=${to || '(missing)'} filename=${filename || '(missing)'} captionLength=${caption != null ? String(caption).length : 0}`);
+
+  if (!to || !filename || !fileBase64 || typeof fileBase64 !== 'string') {
+    return res.status(400).json({ error: 'to, filename and fileBase64 required' });
+  }
+  const instance = whatsappInstances.get(instanceId);
+  if (instance.status !== 'ready') {
+    console.log(`[send-file] instance=${instanceId} rejected: not ready (status=${instance?.status})`);
+    return res.status(503).json({ error: 'Instance not ready. Wait for WhatsApp to connect.' });
+  }
+  let data = fileBase64;
+  if (data.includes(',')) {
+    data = data.replace(/^data:[^;]+;base64,/, '');
+  }
+  let buffer;
+  try {
+    buffer = Buffer.from(data, 'base64');
+  } catch (e) {
+    return res.status(400).json({ error: 'Invalid base64 in fileBase64' });
+  }
+  const type = getMimetype(filename, mimetype);
+  const media = new MessageMedia(type, data, filename, buffer.length);
+  const chatId = String(to).replace(/\D/g, '') + '@c.us';
+  // Optional caption: request body field "caption" → sendMessage(chatId, media, { caption: '...' })
+  const sendOpts = typeof caption === 'string' && caption.length > 0 ? { caption } : {};
+  try {
+    const sent = await instance.client.sendMessage(chatId, media, sendOpts);
+    console.log(`[send-file] instance=${instanceId} to=${chatId} success messageId=${sent.id?._serialized || '(n/a)'}`);
+    res.json({ success: true, messageId: sent.id?._serialized || null });
+  } catch (err) {
+    console.log(`[send-file] instance=${instanceId} to=${chatId} error: ${err.message}`);
+    res.status(500).json({ error: err.message || 'Failed to send file' });
   }
 });
 
