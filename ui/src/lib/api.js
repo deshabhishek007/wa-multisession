@@ -30,8 +30,11 @@ async function apiFetch(url, options = {}) {
   const start = performance.now();
   log('info', `${method} ${url}`, { body: options.body ? sanitizeBody(options.body) : undefined });
 
+  // Send cookies cross-origin (e.g. Vite dev 5173 → API 3000) so session auth works
+  const fetchOptions = { ...options, credentials: 'include' };
+
   try {
-    const res = await fetch(url, options);
+    const res = await fetch(url, fetchOptions);
     const duration = Math.round(performance.now() - start);
     const meta = { status: res.status, duration: `${duration}ms` };
     if (!res.ok) {
