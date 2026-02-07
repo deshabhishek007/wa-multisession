@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import session from 'express-session';
+import crypto from 'crypto';
 import whatsapp from 'whatsapp-web.js';
 import QRCode from 'qrcode';
 import { WebSocketServer } from 'ws';
@@ -11,6 +12,10 @@ import { readFile, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import dotenv from 'dotenv';
 import * as db from './db.js';
+
+function generateApiKey() {
+  return crypto.randomBytes(32).toString('hex');
+}
 
 dotenv.config();
 db.initDb();
@@ -91,6 +96,30 @@ function requireAdmin(req, res, next) {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Admin only' });
     }
+    next();
+  });
+}
+
+/** Auth for instance-scoped routes: accept X-API-Key (must match this instance) or session with access */
+function requireInstanceAccess(req, res, next) {
+  const instanceId = req.params.instanceId;
+  const apiKey = req.headers['x-api-key'] || req.headers['authorization']?.replace(/^Bearer\s+/i, '');
+  if (apiKey) {
+    const keyInstanceId = db.getInstanceIdByApiKey(apiKey);
+    if (keyInstanceId === instanceId && whatsappInstances.has(instanceId)) {
+      req.instanceId = instanceId;
+      return next();
+    }
+    return res.status(401).json({ error: 'Invalid API key or instance' });
+  }
+  requireAuth(req, res, () => {
+    if (!whatsappInstances.has(instanceId)) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    if (!db.userCanAccessInstance(req.user.id, req.user.role, instanceId)) {
+      return res.status(403).json({ error: 'Access denied to this instance' });
+    }
+    req.instanceId = instanceId;
     next();
   });
 }
@@ -204,6 +233,9 @@ app.post('/api/instances', requireAdmin, async (req, res) => {
       names.push(instanceId);
       await saveInstanceNames(names);
     }
+    if (!db.getInstanceApiKey(instanceId)) {
+      db.setInstanceApiKey(instanceId, generateApiKey());
+    }
     res.json({ success: true, instanceId });
   } catch (error) {
     whatsappInstances.delete(instanceId);
@@ -224,6 +256,7 @@ app.delete('/api/instances/:instanceId', requireAdmin, async (req, res) => {
     await instance.client.destroy();
     whatsappInstances.delete(instanceId);
     instanceClients.delete(instanceId);
+    db.deleteInstanceApiKey(instanceId);
 
     const names = await loadInstanceNames();
     const updated = names.filter((n) => n !== instanceId);
@@ -232,6 +265,42 @@ app.delete('/api/instances/:instanceId', requireAdmin, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Instance API key (session or API key auth)
+app.get('/api/instances/:instanceId/api-key', requireInstanceAccess, (req, res) => {
+  const key = db.getInstanceApiKey(req.instanceId);
+  if (!key) {
+    const newKey = generateApiKey();
+    db.setInstanceApiKey(req.instanceId, newKey);
+    return res.json({ apiKey: newKey });
+  }
+  res.json({ apiKey: key });
+});
+
+app.post('/api/instances/:instanceId/api-key/regenerate', requireInstanceAccess, (req, res) => {
+  const newKey = generateApiKey();
+  db.setInstanceApiKey(req.instanceId, newKey);
+  res.json({ apiKey: newKey });
+});
+
+// Send message (session or API key auth). Body: { to: string (phone with country code), message: string }
+app.post('/api/instances/:instanceId/send-message', requireInstanceAccess, async (req, res) => {
+  const { to, message } = req.body;
+  if (!to || !message || typeof message !== 'string') {
+    return res.status(400).json({ error: 'to and message required' });
+  }
+  const instance = whatsappInstances.get(req.instanceId);
+  if (instance.status !== 'ready') {
+    return res.status(503).json({ error: 'Instance not ready. Wait for WhatsApp to connect.' });
+  }
+  const chatId = String(to).replace(/\D/g, '') + '@c.us';
+  try {
+    const sent = await instance.client.sendMessage(chatId, message);
+    res.json({ success: true, messageId: sent.id?._serialized || null });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to send message' });
   }
 });
 
@@ -455,5 +524,8 @@ server.listen(PORT, async () => {
     createAndInitializeInstance(instanceId).catch((err) => {
       console.error(`Failed to restore instance ${instanceId}:`, err.message);
     });
+    if (!db.getInstanceApiKey(instanceId)) {
+      db.setInstanceApiKey(instanceId, generateApiKey());
+    }
   }
 });

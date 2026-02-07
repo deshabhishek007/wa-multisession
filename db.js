@@ -35,6 +35,10 @@ export function initDb() {
     );
     CREATE INDEX IF NOT EXISTS idx_user_instances_user ON user_instances(user_id);
     CREATE INDEX IF NOT EXISTS idx_user_instances_instance ON user_instances(instance_id);
+    CREATE TABLE IF NOT EXISTS instance_api_keys (
+      instance_id TEXT PRIMARY KEY,
+      api_key TEXT NOT NULL UNIQUE
+    );
   `);
   seedAdminIfNeeded(database);
   return database;
@@ -127,4 +131,25 @@ export function deleteUser(userId) {
 export function getAdminCount() {
   const row = getDb().prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").get();
   return row?.n ?? 0;
+}
+
+export function setInstanceApiKey(instanceId, apiKey) {
+  getDb()
+    .prepare('INSERT OR REPLACE INTO instance_api_keys (instance_id, api_key) VALUES (?, ?)')
+    .run(instanceId, apiKey);
+}
+
+export function getInstanceApiKey(instanceId) {
+  const row = getDb().prepare('SELECT api_key FROM instance_api_keys WHERE instance_id = ?').get(instanceId);
+  return row?.api_key ?? null;
+}
+
+export function getInstanceIdByApiKey(apiKey) {
+  if (!apiKey || typeof apiKey !== 'string') return null;
+  const row = getDb().prepare('SELECT instance_id FROM instance_api_keys WHERE api_key = ?').get(apiKey.trim());
+  return row?.instance_id ?? null;
+}
+
+export function deleteInstanceApiKey(instanceId) {
+  getDb().prepare('DELETE FROM instance_api_keys WHERE instance_id = ?').run(instanceId);
 }

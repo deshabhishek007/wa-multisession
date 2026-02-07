@@ -176,3 +176,30 @@ export async function deleteUser(userId) {
   }
   return { deleted: data.deleted !== false };
 }
+
+export async function getInstanceApiKey(instanceId) {
+  const res = await apiFetch(`${API_BASE}/api/instances/${instanceId}/api-key`);
+  if (!res.ok) throw new Error('Failed to load API key');
+  const data = await res.json();
+  return data.apiKey;
+}
+
+export async function regenerateInstanceApiKey(instanceId) {
+  const res = await apiFetch(`${API_BASE}/api/instances/${instanceId}/api-key/regenerate`, {
+    method: 'POST'
+  });
+  if (!res.ok) throw new Error('Failed to regenerate API key');
+  const data = await res.json();
+  return data.apiKey;
+}
+
+export async function sendInstanceMessage(instanceId, to, message) {
+  const res = await apiFetch(`${API_BASE}/api/instances/${instanceId}/send-message`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to, message })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Failed to send message');
+  return data;
+}
