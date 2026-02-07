@@ -1,4 +1,5 @@
 import express from 'express';
+import cors from 'cors';
 import session from 'express-session';
 import whatsapp from 'whatsapp-web.js';
 import QRCode from 'qrcode';
@@ -22,12 +23,23 @@ const __dirname = dirname(__filename);
 
 const INSTANCES_FILE = join(__dirname, 'instances.json');
 
+// CORS: allow Vite dev server and same-origin (for built UI)
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      const allowed = !origin || origin === 'http://localhost:3000' || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+      cb(null, allowed);
+    },
+    credentials: true
+  })
+);
+
 // Session must be before WebSocket upgrade so we can use it in upgrade handler
 const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET || 'your-secret-key-change-this',
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false }
+  cookie: { secure: false, sameSite: 'lax' }
 });
 app.use(sessionMiddleware);
 

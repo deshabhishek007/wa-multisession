@@ -1,5 +1,52 @@
 const dev = typeof import.meta !== 'undefined' && import.meta.env?.DEV;
 export const API_BASE = dev ? 'http://localhost:3000' : '';
+
+const LOG_PREFIX = '[API]';
+
+function log(level, message, meta = {}) {
+  const fn = level === 'error' ? console.error : console.log;
+  fn(LOG_PREFIX, message, Object.keys(meta).length ? meta : '');
+}
+
+/** Sanitize body for logging (redact password fields) */
+function sanitizeBody(body) {
+  if (body == null) return undefined;
+  try {
+    const o = typeof body === 'string' ? JSON.parse(body) : body;
+    const sanitized = { ...o };
+    if ('password' in sanitized) sanitized.password = '***';
+    return sanitized;
+  } catch {
+    return body;
+  }
+}
+
+/**
+ * Logged fetch: logs method, url, status, duration and optional error.
+ * Use this for all API calls so they appear in the console.
+ */
+async function apiFetch(url, options = {}) {
+  const method = (options.method || 'GET').toUpperCase();
+  const start = performance.now();
+  log('info', `${method} ${url}`, { body: options.body ? sanitizeBody(options.body) : undefined });
+
+  try {
+    const res = await fetch(url, options);
+    const duration = Math.round(performance.now() - start);
+    const meta = { status: res.status, duration: `${duration}ms` };
+    if (!res.ok) {
+      log('error', `${method} ${url} → ${res.status}`, meta);
+    } else {
+      log('info', `${method} ${url} → ${res.status}`, meta);
+    }
+    return res;
+  } catch (err) {
+    const duration = Math.round(performance.now() - start);
+    log('error', `${method} ${url} failed`, { duration: `${duration}ms`, error: err.message });
+    throw err;
+  }
+}
+
 export function getWsUrl() {
   if (dev) return 'ws://localhost:3000';
   const protocol = typeof location !== 'undefined' && location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -7,19 +54,19 @@ export function getWsUrl() {
 }
 
 export async function checkAuth() {
-  const res = await fetch(`${API_BASE}/api/check-auth`);
+  const res = await apiFetch(`${API_BASE}/api/check-auth`);
   const data = await res.json();
   return { authenticated: data.authenticated, user: data.user || null };
 }
 
 export async function getMe() {
-  const res = await fetch(`${API_BASE}/api/me`);
+  const res = await apiFetch(`${API_BASE}/api/me`);
   if (!res.ok) return null;
   return res.json();
 }
 
 export async function login(username, password) {
-  const res = await fetch(`${API_BASE}/api/login`, {
+  const res = await apiFetch(`${API_BASE}/api/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password })
@@ -30,17 +77,17 @@ export async function login(username, password) {
 }
 
 export async function logout() {
-  await fetch(`${API_BASE}/api/logout`, { method: 'POST' });
+  await apiFetch(`${API_BASE}/api/logout`, { method: 'POST' });
 }
 
 export async function getInstances() {
-  const res = await fetch(`${API_BASE}/api/instances`);
+  const res = await apiFetch(`${API_BASE}/api/instances`);
   if (!res.ok) throw new Error('Failed to load instances');
   return res.json();
 }
 
 export async function createInstance(instanceId) {
-  const res = await fetch(`${API_BASE}/api/instances`, {
+  const res = await apiFetch(`${API_BASE}/api/instances`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ instanceId })
@@ -52,18 +99,18 @@ export async function createInstance(instanceId) {
 }
 
 export async function deleteInstance(instanceId) {
-  const res = await fetch(`${API_BASE}/api/instances/${instanceId}`, { method: 'DELETE' });
+  const res = await apiFetch(`${API_BASE}/api/instances/${instanceId}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete instance');
 }
 
 export async function getUsers() {
-  const res = await fetch(`${API_BASE}/api/users`);
+  const res = await apiFetch(`${API_BASE}/api/users`);
   if (!res.ok) throw new Error('Failed to load users');
   return res.json();
 }
 
 export async function createUser(username, password, role) {
-  const res = await fetch(`${API_BASE}/api/users`, {
+  const res = await apiFetch(`${API_BASE}/api/users`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password, role })
@@ -76,7 +123,7 @@ export async function createUser(username, password, role) {
 }
 
 export async function assignInstanceToUser(userId, instanceId) {
-  const res = await fetch(`${API_BASE}/api/users/${userId}/instances`, {
+  const res = await apiFetch(`${API_BASE}/api/users/${userId}/instances`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ instanceId })
@@ -85,18 +132,18 @@ export async function assignInstanceToUser(userId, instanceId) {
 }
 
 export async function removeInstanceFromUser(userId, instanceId) {
-  const res = await fetch(`${API_BASE}/api/users/${userId}/instances/${instanceId}`, { method: 'DELETE' });
+  const res = await apiFetch(`${API_BASE}/api/users/${userId}/instances/${instanceId}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to remove assignment');
 }
 
 export async function getInstanceUsers(instanceId) {
-  const res = await fetch(`${API_BASE}/api/instances/${instanceId}/users`);
+  const res = await apiFetch(`${API_BASE}/api/instances/${instanceId}/users`);
   if (!res.ok) throw new Error('Failed to load users');
   return res.json();
 }
 
 export async function getUserInstances(userId) {
-  const res = await fetch(`${API_BASE}/api/users/${userId}/instances`);
+  const res = await apiFetch(`${API_BASE}/api/users/${userId}/instances`);
   if (!res.ok) throw new Error('Failed to load assignments');
   return res.json();
 }
