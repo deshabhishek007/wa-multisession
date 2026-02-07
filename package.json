@@ -5,6 +5,9 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
+    "build": "pnpm run build:ui && node scripts/copy-ui-to-public.cjs",
+    "full:dev": "concurrently \"pnpm run dev\" \"pnpm run dev:ui\"",
+    "full:build": "pnpm run build",
     "dev:ui": "cd ui && pnpm run dev",
     "build:ui": "cd ui && pnpm run build",
     "preview:ui": "cd ui && pnpm run preview"

@@ -11,3 +11,4 @@ pnpm-lock.yaml
 pnpm-workspace.yaml
 ui/node_modules
 ui/dist
+public
