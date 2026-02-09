@@ -3,10 +3,16 @@
   import { checkAuth } from './lib/api.js';
   import Login from './components/Login.svelte';
   import Dashboard from './components/Dashboard.svelte';
+  import Docs from './components/Docs.svelte';
 
   let authenticated = false;
   let user = null;
   let checking = true;
+  let showDocs = false;
+
+  function updateShowDocs() {
+    if (typeof window !== 'undefined') showDocs = window.location.hash === '#docs';
+  }
 
   onMount(async () => {
     try {
@@ -18,6 +24,12 @@
       user = null;
     }
     checking = false;
+
+    updateShowDocs();
+    window.addEventListener('hashchange', updateShowDocs);
+    return () => {
+      window.removeEventListener('hashchange', updateShowDocs);
+    };
   });
 
   function onLogin(ev) {
@@ -38,7 +50,11 @@
     </div>
   </div>
 {:else if authenticated}
-  <Dashboard {user} on:logout={onLogout} />
+  {#if showDocs}
+    <Docs on:back={() => (showDocs = false)} />
+  {:else}
+    <Dashboard {user} on:logout={onLogout} />
+  {/if}
 {:else}
   <Login on:login={onLogin} />
 {/if}

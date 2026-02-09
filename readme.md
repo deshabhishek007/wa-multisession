@@ -155,7 +155,7 @@ https://sj-dev-team.postman.co/workspace/SF_Practice~23d7639c-eba6-482b-871c-758
 ### Sending Messages
 
 Add endpoints to send messages through WhatsApp instances:
-
+ 
 ```javascript
 app.post('/api/instances/:instanceId/send', requireAuth, async (req, res) => {
   const { instanceId } = req.params;

@@ -120,6 +120,28 @@ button.danger:hover {
   margin-bottom: 30px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-actions a.link-docs {
+  background: #f5f5f5;
+  color: #555;
+  text-decoration: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.header-actions a.link-docs:hover {
+  background: #e0e0e0;
+  transform: translateY(-2px);
+}
+
 .instances-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));

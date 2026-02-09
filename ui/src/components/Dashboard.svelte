@@ -269,7 +269,10 @@
           {/if}
         </p>
       </div>
-      <button type="button" class="secondary" on:click={handleLogout}>Logout</button>
+      <div class="header-actions">
+        <a href="#docs" class="secondary link-docs">Docs</a>
+        <button type="button" class="secondary" on:click={handleLogout}>Logout</button>
+      </div>
     </div>
 
     {#if error}

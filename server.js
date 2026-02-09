@@ -70,7 +70,8 @@ const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET || 'your-secret-key-change-this',
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false, sameSite: 'lax' }
+
+  cookie: { secure: process.env.NODE_ENV === 'production' ? true : false, sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax' }
 });
 app.use(sessionMiddleware);
 
