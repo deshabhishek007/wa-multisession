@@ -74,7 +74,9 @@ const sessionMiddleware = session({
   cookie: { secure: process.env.NODE_ENV === 'production' ? true : false, sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax' }
 });
 app.use(sessionMiddleware);
-
+app.set('trust proxy', 1); // trust first proxy
+console.log('Session cookie secure:', sessionMiddleware.cookie.secure);
+console.log('Session cookie sameSite:', sessionMiddleware.cookie.sameSite);
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
