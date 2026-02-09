@@ -75,8 +75,6 @@ const sessionMiddleware = session({
 });
 app.use(sessionMiddleware);
 app.set('trust proxy', 1); // trust first proxy
-console.log('Session cookie secure:', sessionMiddleware.cookie.secure);
-console.log('Session cookie sameSite:', sessionMiddleware.cookie.sameSite);
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
