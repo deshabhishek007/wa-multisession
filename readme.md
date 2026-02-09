@@ -55,15 +55,30 @@ http://localhost:3000
 - Sessions are stored locally using `LocalAuth` from whatsapp-web.js
 - You can have as many instances as your system resources allow
 
-### WebSocket Events & Incoming Message Listener
+### Message listener
 
-The application uses WebSockets to push real-time updates. Connect to the WebSocket (same origin, with session cookie), send `{ "type": "subscribe", "instanceId": "your-instance-id" }`, and you'll receive:
+Each WhatsApp instance registers an **incoming message listener** (`client.on('message')`). When someone sends a message to that instance:
 
-- `qr` - New QR code generated
-- `ready` - Instance is connected and ready
-- `authenticated` - WhatsApp authentication successful
-- `disconnected` - Instance disconnected
-- **`message`** - **Incoming WhatsApp message** (when someone sends a message to that instance). Payload includes `instanceId` and `message` (from, body, timestamp, hasMedia, etc.). See **API.md** for the full WebSocket and message payload docs.
+1. **Filter** – Messages from yourself (`fromMe`) are ignored.
+2. **Persist** – The message is stored in the **`instance_messages`** table (see [Database](#database)), so the log survives server restarts.
+3. **Broadcast** – Subscribed WebSocket clients receive a `message` event with the full payload (from, body, timestamp, hasMedia, senderDisplay, etc.).
+
+You can:
+
+- **View live** – Subscribe to the instance over WebSocket and handle `type: 'message'` to show messages in real time.
+- **View history** – Call `GET /api/instances/:instanceId/messages?limit=500` to load the persisted log (see **API.md**).
+
+The UI uses both: it fetches the message log on load and listens for new messages over WebSocket to update the log.
+
+### WebSocket events
+
+Connect to the WebSocket (same origin, with session cookie), send `{ "type": "subscribe", "instanceId": "your-instance-id" }`, and you'll receive:
+
+- `qr` – New QR code generated
+- `ready` – Instance is connected and ready
+- `authenticated` – WhatsApp authentication successful
+- `disconnected` – Instance disconnected
+- **`message`** – Incoming WhatsApp message (see [Message listener](#message-listener) above). Payload: `instanceId` and `message` (messageId, from, to, body, timestamp, hasMedia, type, senderDisplay, etc.). Full shape in **API.md**.
 
 ## Project Structure
 
@@ -136,10 +151,6 @@ https://sj-dev-team.postman.co/workspace/SF_Practice~23d7639c-eba6-482b-871c-758
 6. **Implement proper password policies** and user management
 
 ## Extending the Application
-
-### Adding User Registration
-
-Replace the in-memory `users` object with a database (MongoDB, PostgreSQL, etc.) and add registration endpoints.
 
 ### Sending Messages
 
