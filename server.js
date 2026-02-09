@@ -238,6 +238,48 @@ async function createAndInitializeInstance(instanceId) {
     broadcastToInstance(instanceId, { type: 'disconnected', instanceId, reason });
   });
 
+  // Incoming message listener: save to DB and broadcast to WebSocket subscribers
+  client.on('message', async (message) => {
+    if (message.fromMe) return;
+    const id = message.id;
+    const messageIdSerialized =
+      typeof id === 'object' && id != null && typeof id._serialized === 'string' ? id._serialized : String(id);
+    const fromJid = message.from || null;
+    const body = message.body || '';
+    const messageTimestamp = message.timestamp != null ? Number(message.timestamp) : null;
+
+    let senderDisplay = fromJid;
+    try {
+      const contact = await message.getContact();
+      if (contact && (contact.pushname || contact.name || contact.number)) {
+        senderDisplay = contact.pushname || contact.name || contact.number || fromJid;
+      } else if (fromJid) {
+        senderDisplay = fromJid.replace('@c.us', '').replace('@g.us', '');
+      }
+    } catch {
+      if (fromJid) senderDisplay = fromJid.replace('@c.us', '').replace('@g.us', '');
+    }
+
+    db.insertMessage(instanceId, messageIdSerialized, fromJid, senderDisplay, body, messageTimestamp);
+
+    const payload = {
+      messageId: messageIdSerialized,
+      from: fromJid,
+      to: message.to || null,
+      body,
+      timestamp: messageTimestamp,
+      fromMe: false,
+      hasMedia: Boolean(message.hasMedia),
+      type: message.type || null,
+      author: message.author || null,
+      isStatus: Boolean(message.isStatus),
+      isForwarded: Boolean(message.isForwarded),
+      hasQuotedMsg: Boolean(message.hasQuotedMsg),
+      senderDisplay
+    };
+    broadcastToInstance(instanceId, { type: 'message', instanceId, message: payload });
+  });
+
   await client.initialize();
 }
 
@@ -283,6 +325,7 @@ app.delete('/api/instances/:instanceId', requireAdmin, async (req, res) => {
     whatsappInstances.delete(instanceId);
     instanceClients.delete(instanceId);
     db.deleteInstanceApiKey(instanceId);
+    db.deleteMessagesForInstance(instanceId);
 
     const names = await loadInstanceNames();
     const updated = names.filter((n) => n !== instanceId);
@@ -373,6 +416,23 @@ app.post('/api/instances/:instanceId/send-file', requireInstanceAccess, async (r
     console.log(`[send-file] instance=${instanceId} to=${chatId} error: ${err.message}`);
     res.status(500).json({ error: err.message || 'Failed to send file' });
   }
+});
+
+// Get message log for instance (session or API key). Query: limit (default 500)
+app.get('/api/instances/:instanceId/messages', requireInstanceAccess, (req, res) => {
+  const instanceId = req.instanceId;
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 500, 1), 2000);
+  const rows = db.getMessagesForInstance(instanceId, limit);
+  const messages = rows.map((r) => ({
+    id: r.id,
+    messageId: r.message_id,
+    from: r.from_jid,
+    senderDisplay: r.sender_display,
+    body: r.body,
+    timestamp: r.message_timestamp,
+    createdAt: r.created_at
+  }));
+  res.json(messages);
 });
 
 // User management (admin only)

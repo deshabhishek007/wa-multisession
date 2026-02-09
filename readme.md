@@ -55,14 +55,15 @@ http://localhost:3000
 - Sessions are stored locally using `LocalAuth` from whatsapp-web.js
 - You can have as many instances as your system resources allow
 
-### WebSocket Events
+### WebSocket Events & Incoming Message Listener
 
-The application uses WebSockets to push real-time updates:
+The application uses WebSockets to push real-time updates. Connect to the WebSocket (same origin, with session cookie), send `{ "type": "subscribe", "instanceId": "your-instance-id" }`, and you'll receive:
 
 - `qr` - New QR code generated
 - `ready` - Instance is connected and ready
 - `authenticated` - WhatsApp authentication successful
 - `disconnected` - Instance disconnected
+- **`message`** - **Incoming WhatsApp message** (when someone sends a message to that instance). Payload includes `instanceId` and `message` (from, body, timestamp, hasMedia, etc.). See **API.md** for the full WebSocket and message payload docs.
 
 ## Project Structure
 
@@ -74,6 +75,28 @@ whatsapp-multi-instance/
 ├── package.json        # Dependencies
 └── README.md          # This file
 ```
+
+## Database
+
+User and message data are stored in **`data.db`** (SQLite) in the project root. Tables include:
+
+- **users** – login, roles
+- **user_instances** – which users can access which instances
+- **instance_api_keys** – API key per instance
+- **instance_messages** – message log (persists across boots)
+
+SQLite runs in **WAL mode**. To inspect the DB with an external tool (e.g. DB Browser, `sqlite3`), either:
+
+1. **Stop the server**, then open `data.db`, or  
+2. Use a tool that supports WAL (it will use `data.db` + `data.db-wal`).
+
+To list tables from the shell (with server stopped):
+
+```bash
+sqlite3 data.db ".tables"
+```
+
+You should see `instance_messages` (and others). The server runs a checkpoint on startup so the main file stays up to date.
 
 ## API Endpoints
 

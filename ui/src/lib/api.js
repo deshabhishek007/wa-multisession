@@ -203,3 +203,27 @@ export async function sendInstanceMessage(instanceId, to, message) {
   if (!res.ok) throw new Error(data.error || 'Failed to send message');
   return data;
 }
+
+export async function getInstanceMessages(instanceId, limit = 500) {
+  const url = `${API_BASE}/api/instances/${instanceId}/messages${limit ? `?limit=${limit}` : ''}`;
+  const res = await apiFetch(url);
+  const text = await res.text();
+  if (!res.ok) {
+    let errMsg = 'Failed to load message log';
+    try {
+      const data = JSON.parse(text);
+      if (data && typeof data.error === 'string') errMsg = data.error;
+    } catch {
+      if (text.trimStart().startsWith('<')) errMsg = 'Session may have expired. Try logging in again.';
+    }
+    throw new Error(errMsg);
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    if (text.trimStart().startsWith('<')) {
+      throw new Error('Server returned a page instead of data. Session may have expired — try logging in again.');
+    }
+    throw new Error('Invalid response from server');
+  }
+}

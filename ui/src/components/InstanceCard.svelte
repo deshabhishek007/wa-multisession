@@ -84,6 +84,10 @@
     }
   }
 
+  function openMessageLog() {
+    dispatch('openMessageLog', { instanceId: instance.id });
+  }
+
   $: hasQr = instance.qr != null && instance.qr !== '';
   $: cardClass = instance.status === 'ready' ? 'active' : instance.status === 'qr_ready' ? 'pending' : '';
   $: statusClass = `status-${instance.status}`;
@@ -167,11 +171,14 @@
     </div>
   {/if}
 
-  {#if canDelete}
-    <div class="instance-actions">
+  <div class="instance-actions">
+    <button type="button" class="secondary" on:click={openMessageLog} title="View incoming message log">
+      View message log
+    </button>
+    {#if canDelete}
       <button type="button" class="danger" on:click={onDelete}>Delete</button>
-    </div>
-  {/if}
+    {/if}
+  </div>
 </div>
 
 <style>

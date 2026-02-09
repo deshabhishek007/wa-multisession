@@ -39,8 +39,27 @@ export function initDb() {
       instance_id TEXT PRIMARY KEY,
       api_key TEXT NOT NULL UNIQUE
     );
+    CREATE TABLE IF NOT EXISTS instance_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      instance_id TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      from_jid TEXT NOT NULL,
+      sender_display TEXT NOT NULL,
+      body TEXT NOT NULL,
+      message_timestamp INTEGER,
+      created_at INTEGER DEFAULT (strftime('%s','now')),
+      UNIQUE(instance_id, message_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_instance_messages_instance ON instance_messages(instance_id);
+    CREATE INDEX IF NOT EXISTS idx_instance_messages_created ON instance_messages(instance_id, created_at DESC);
   `);
   seedAdminIfNeeded(database);
+  // Checkpoint WAL so the main data.db file has schema + data (visible in external tools)
+  try {
+    database.pragma('wal_checkpoint(TRUNCATE)');
+  } catch (_) {
+    console.error('Error checkpointing WAL', _);
+  }
   return database;
 }
 
@@ -152,4 +171,32 @@ export function getInstanceIdByApiKey(apiKey) {
 
 export function deleteInstanceApiKey(instanceId) {
   getDb().prepare('DELETE FROM instance_api_keys WHERE instance_id = ?').run(instanceId);
+}
+
+export function insertMessage(instanceId, messageId, fromJid, senderDisplay, body, messageTimestamp) {
+  const created = Math.floor(Date.now() / 1000);
+  console.log('insertMessage', instanceId, messageId, fromJid, senderDisplay, body, messageTimestamp);
+  const ts = messageTimestamp != null ? Number(messageTimestamp) : created;
+  try {
+  getDb()
+    .prepare(
+      `INSERT INTO instance_messages (instance_id, message_id, from_jid, sender_display, body, message_timestamp, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(instanceId, messageId, fromJid, senderDisplay || fromJid, body || '', ts, created);
+  } catch (e) {
+    console.error('Error inserting message', e);
+  }
+}
+
+export function getMessagesForInstance(instanceId, limit = 500) {
+  return getDb()
+    .prepare(
+      `SELECT id, instance_id, message_id, from_jid, sender_display, body, message_timestamp, created_at
+       FROM instance_messages WHERE instance_id = ? ORDER BY created_at DESC LIMIT ?`
+    )
+    .all(instanceId, limit);
+}
+
+export function deleteMessagesForInstance(instanceId) {
+  getDb().prepare('DELETE FROM instance_messages WHERE instance_id = ?').run(instanceId);
 }

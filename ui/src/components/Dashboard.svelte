@@ -4,6 +4,7 @@
   import { getWsUrl } from '../lib/api.js';
   import * as api from '../lib/api.js';
   import InstanceCard from './InstanceCard.svelte';
+  import MessageLog from './MessageLog.svelte';
 
   export let user = null;
 
@@ -14,6 +15,9 @@
   let error = '';
   let success = '';
   let ws = null;
+
+  let messageLogInstanceId = null;
+  let newMessageForLog = null;
 
   // Admin state
   let users = [];
@@ -54,6 +58,15 @@
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
+
+      if (data.type === 'message') {
+        if (messageLogInstanceId === data.instanceId) {
+          newMessageForLog = data.message;
+        }
+        dispatch('incomingMessage', data);
+        return;
+      }
+
       const idx = instances.findIndex((i) => i.id === data.instanceId);
       if (idx === -1) return;
 
@@ -125,6 +138,16 @@
     } catch (e) {
       setError(e.message || 'Failed to create instance');
     }
+  }
+
+  function handleOpenMessageLog(event) {
+    messageLogInstanceId = event.detail?.instanceId ?? null;
+    newMessageForLog = null;
+  }
+
+  function closeMessageLog() {
+    messageLogInstanceId = null;
+    newMessageForLog = null;
   }
 
   async function handleDelete(event) {
@@ -274,11 +297,29 @@
         </p>
       {:else}
         {#each instances as instance (instance.id)}
-          <InstanceCard {instance} on:delete={handleDelete} canDelete={isAdmin} />
+          <InstanceCard
+            {instance}
+            on:delete={handleDelete}
+            on:openMessageLog={handleOpenMessageLog}
+            canDelete={isAdmin}
+          />
         {/each}
       {/if}
     </div>
   </div>
+
+  {#if messageLogInstanceId}
+    <div class="message-log-overlay" role="dialog" aria-modal="true" aria-label="Message log">
+      <div class="message-log-backdrop" on:click={closeMessageLog} on:keydown={(e) => e.key === 'Escape' && closeMessageLog()} tabindex="-1"></div>
+      <div class="message-log-wrap">
+        <MessageLog
+          instanceId={messageLogInstanceId}
+          newMessage={newMessageForLog}
+          on:close={closeMessageLog}
+        />
+      </div>
+    </div>
+  {/if}
 
   {#if isAdmin}
     <div class="card admin-card">
@@ -431,5 +472,24 @@
   .unassign-btn:hover {
     color: #1e1b4b;
     transform: none;
+  }
+
+  .message-log-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .message-log-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+  }
+  .message-log-wrap {
+    position: relative;
+    z-index: 1001;
   }
 </style>

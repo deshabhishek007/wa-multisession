@@ -97,6 +97,7 @@ For instance-scoped routes you can use an **instance API key** instead of a sess
 | `POST` | `/api/instances/:instanceId/api-key/regenerate` | Session or API key | Regenerate instance API key. |
 | `POST` | `/api/instances/:instanceId/send-message` | Session or API key | Send a WhatsApp message. |
 | `POST` | `/api/instances/:instanceId/send-file` | Session or API key | Send a file with optional caption (filename + base64). |
+| `GET` | `/api/instances/:instanceId/messages` | Session or API key | Get message log for this instance (incoming messages stored in DB). |
 | `GET` | `/api/instances/:instanceId/users` | Admin | List users assigned to instance. |
 
 ### GET /api/instances
@@ -260,6 +261,34 @@ Send a file with optional text caption. The file is provided as a base64 string.
 
 ---
 
+### GET /api/instances/:instanceId/messages
+
+**Auth:** Session (with access to this instance) or instance API key.
+
+Returns the message log for the instance (incoming messages are stored in the database). Query param **limit** (default 500, max 2000) limits the number of messages returned. Messages are ordered newest first.
+
+**Success (200):**
+
+```json
+[
+  {
+    "id": 1,
+    "messageId": "true_1234567890@c.us_3EB0XXXXX",
+    "from": "1234567890@c.us",
+    "senderDisplay": "John Doe",
+    "body": "Hello!",
+    "timestamp": 1234567890,
+    "createdAt": 1234567891
+  }
+]
+```
+
+- **senderDisplay:** Name or number shown for the sender (suitable for "Name/Number : message" display).
+
+**Errors:** `401` — Invalid API key or access. `404` — Instance not found.
+
+---
+
 ### GET /api/instances/:instanceId/users
 
 **Auth:** Admin only.
@@ -273,6 +302,72 @@ Send a file with optional text caption. The file is provided as a base64 string.
 ```
 
 **Errors:** `404` — Instance not found.
+
+---
+
+## WebSocket: subscribing to incoming messages
+
+You can listen for **incoming WhatsApp messages** by connecting to the WebSocket and subscribing to an instance. The same WebSocket is used for instance status (QR, ready, etc.) and for live message events.
+
+**Connection:** `ws://localhost:3000` (or your server origin). The connection uses the same session as the HTTP API: cookies are sent on the upgrade request, so you must be logged in (session cookie) for the upgrade to succeed.
+
+**Flow:**
+
+1. Connect to the WebSocket.
+2. Send `{ "type": "auth" }` (optional; server may send `{ "type": "auth_success" }`).
+3. Send `{ "type": "subscribe", "instanceId": "your-instance-id" }` for each instance you want to watch. You must have access to that instance (session user or admin).
+4. Receive events as JSON messages.
+
+**Events you may receive:**
+
+| `type`    | Description |
+|-----------|-------------|
+| `auth_success` | Response to `auth`. |
+| `status` | Current instance status and optional QR (after subscribe). |
+| `qr`     | New QR code (data URL) for scanning. |
+| `ready`  | Instance is connected and ready. |
+| `authenticated` | Instance authenticated. |
+| `disconnected` | Instance disconnected (payload may include `reason`). |
+| **`message`**  | **Incoming WhatsApp message** (see below). |
+| `error`  | e.g. `{ "message": "Access denied to this instance" }`. |
+
+**Incoming message payload (`type: "message"`):**
+
+```json
+{
+  "type": "message",
+  "instanceId": "client1",
+  "message": {
+    "messageId": "true_1234567890@c.us_3EB0XXXXX",
+    "from": "1234567890@c.us",
+    "to": "0987654321@c.us",
+    "body": "Hello!",
+    "timestamp": 1234567890,
+    "fromMe": false,
+    "hasMedia": false,
+    "type": "chat",
+    "author": null,
+    "isStatus": false,
+    "isForwarded": false,
+    "hasQuotedMsg": false
+  }
+}
+```
+
+- **messageId:** Unique message ID.
+- **from:** Chat ID of the sender (e.g. `1234567890@c.us` for private, or group JID).
+- **to:** Recipient chat ID (your number when someone messages you).
+- **body:** Text content of the message (empty for media-only).
+- **timestamp:** Unix timestamp (seconds).
+- **fromMe:** Always `false` for this event (we only broadcast incoming messages).
+- **hasMedia:** `true` if the message has media (image, file, etc.); you can use the REST API or library to download media if needed.
+- **type:** Message type (e.g. `chat`, `image`, `audio`, `document`).
+- **author:** In groups, the participant who sent the message; `null` in private chats.
+- **isStatus:** `true` for status updates.
+- **isForwarded:** Whether the message was forwarded.
+- **hasQuotedMsg:** Whether the message is a reply to another.
+
+To **watch for incoming messages**: open a WebSocket, subscribe to the desired `instanceId`, and handle frames where `type === 'message'`.
 
 ---
 
