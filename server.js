@@ -66,12 +66,21 @@ app.use(
 );
 
 // Session must be before WebSocket upgrade so we can use it in upgrade handler
+// Session expiry:
+// - SESSION_TTL_SECONDS env var (default: 24h)
+// - cookie.maxAge enforces absolute expiry on the browser
+// - rolling: true refreshes expiry on each request
+const SESSION_TTL_SECONDS = Number(process.env.SESSION_TTL_SECONDS || 60 * 60 * 24); // default 24h
 const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET || 'your-secret-key-change-this',
   resave: false,
   saveUninitialized: false,
-
-  cookie: { secure: process.env.NODE_ENV === 'production' ? true : false, sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax' }
+  rolling: true,
+  cookie: {
+    maxAge: SESSION_TTL_SECONDS * 1000,
+    secure: process.env.NODE_ENV === 'production' ? true : false,
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax'
+  }
 });
 app.use(sessionMiddleware);
 app.set('trust proxy', 1); // trust first proxy
