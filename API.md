@@ -98,6 +98,7 @@ For instance-scoped routes you can use an **instance API key** instead of a sess
 | `POST` | `/api/instances/:instanceId/send-message` | Session or API key | Send a WhatsApp message. |
 | `POST` | `/api/instances/:instanceId/send-file` | Session or API key | Send a file with optional caption (filename + base64). |
 | `GET` | `/api/instances/:instanceId/messages` | Session or API key | Get message log for this instance (incoming messages stored in DB). |
+| `POST` | `/webhook/wahub/:instanceId` | API key only | Receive incoming message events (e.g. from WaHub). See [wahub_webhook.md](wahub_webhook.md). |
 | `GET` | `/api/instances/:instanceId/users` | Admin | List users assigned to instance. |
 
 ### GET /api/instances
@@ -309,14 +310,21 @@ Returns the message log for the instance (incoming messages are stored in the da
 
 You can listen for **incoming WhatsApp messages** by connecting to the WebSocket and subscribing to an instance. The same WebSocket is used for instance status (QR, ready, etc.) and for live message events.
 
-**Connection:** `ws://localhost:3000` (or your server origin). The connection uses the same session as the HTTP API: cookies are sent on the upgrade request, so you must be logged in (session cookie) for the upgrade to succeed.
+**Connection:** `ws://localhost:3000` (or your server origin). You can use either **session** (dashboard) or **API key** (scripts / server-to-server).
 
-**Flow:**
+**Flow (session):**
 
-1. Connect to the WebSocket.
+1. Connect to the WebSocket (session cookie is sent on upgrade).
 2. Send `{ "type": "auth" }` (optional; server may send `{ "type": "auth_success" }`).
 3. Send `{ "type": "subscribe", "instanceId": "your-instance-id" }` for each instance you want to watch. You must have access to that instance (session user or admin).
 4. Receive events as JSON messages.
+
+**Flow (API key – no session):**
+
+1. Connect to the WebSocket (no cookie required).
+2. Send `{ "type": "auth", "apiKey": "your-instance-api-key" }`. Server responds `{ "type": "auth_success", "instanceId": "…" }` or `{ "type": "error", "message": "…" }`.
+3. Send `{ "type": "subscribe", "instanceId": "…" }` with the **same** instance ID that the API key belongs to. You can only subscribe to that one instance per connection.
+4. Receive events as JSON messages (same `message`, `status`, etc. as above).
 
 **Events you may receive:**
 

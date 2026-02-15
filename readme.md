@@ -7,7 +7,7 @@ A Node.js application for managing multiple WhatsApp Web instances with authenti
 - 🔐 **Session-based authentication** - Secure login system
 - 📱 **Multiple WhatsApp instances** - Manage multiple WhatsApp connections simultaneously
 - 🔄 **Real-time QR code updates** - WebSocket-powered live QR code refresh
-- 💻 **Clean UI** - Responsive interface (vanilla JS with reactive patterns)
+- 💻 **Clean UI** - Svelte app (see [ui/README.md](ui/README.md)) with dashboard, instance cards, message log, API key management
 - 🚀 **Easy to extend** - Built on Express.js with modular architecture
 
 ## Prerequisites
@@ -83,12 +83,18 @@ Connect to the WebSocket (same origin, with session cookie), send `{ "type": "su
 ## Project Structure
 
 ```
-whatsapp-multi-instance/
-├── server.js           # Main server file (Express + WebSocket + WhatsApp logic)
-├── public/
-│   └── index.html      # Frontend UI
-├── package.json        # Dependencies
-└── README.md          # This file
+wa-multisession/
+├── server.js           # Main server (Express + WebSocket + WhatsApp logic)
+├── db.js               # SQLite (users, instance_api_keys, instance_messages, etc.)
+├── public/             # Legacy/fallback static files
+├── ui/                 # Svelte front end (Vite)
+│   ├── src/            # App.svelte, components, lib/api.js
+│   ├── dist/           # Production build (served by server when present)
+│   └── README.md       # UI docs (structure, scripts, components)
+├── package.json
+├── readme.md           # This file
+├── API.md              # REST & WebSocket API
+└── wahub_webhook.md    # Webhook endpoint (WaHub)
 ```
 
 ## Database

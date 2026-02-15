@@ -84,8 +84,11 @@ const sessionMiddleware = session({
 });
 app.use(sessionMiddleware);
 app.set('trust proxy', 1); // trust first proxy
-// Middleware
-app.use(express.json());
+// Skip JSON body parsing for webhook path so we can use raw body for signature verification
+app.use((req, res, next) => {
+  if (req.path.startsWith('/webhook/')) return next();
+  express.json()(req, res, next);
+});
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 const uiDist = join(__dirname, 'ui', 'dist');
@@ -158,6 +161,21 @@ function requireInstanceAccess(req, res, next) {
     req.instanceId = instanceId;
     next();
   });
+}
+
+/** Auth for webhook: API key only (no session). Key must match instanceId. */
+function requireWebhookAuth(req, res, next) {
+  const instanceId = req.params.instanceId;
+  const apiKey = req.headers['x-api-key'] || req.headers['authorization']?.replace(/^Bearer\s+/i, '');
+  if (!apiKey) {
+    return res.status(401).json({ success: false, error: 'API key required (X-API-Key or Bearer)' });
+  }
+  const keyInstanceId = db.getInstanceIdByApiKey(apiKey);
+  if (keyInstanceId !== instanceId || !whatsappInstances.has(instanceId)) {
+    return res.status(401).json({ success: false, error: 'Invalid API key or instance' });
+  }
+  req.instanceId = instanceId;
+  next();
 }
 
 // Routes
@@ -445,6 +463,110 @@ app.get('/api/instances/:instanceId/messages', requireInstanceAccess, (req, res)
   res.json(messages);
 });
 
+// WaHub webhook: receive incoming message events for an instance (API key auth only). See wahub_webhook.md.
+function normalizeWebhookMessage(obj) {
+  if (!obj || typeof obj !== 'object') return null;
+  const rawFrom = obj.from ?? obj.sender ?? (obj.remoteJid ? String(obj.remoteJid).replace(/@.*$/, '') : null);
+  const from = rawFrom ? String(rawFrom).replace(/\D/g, '') : null;
+  if (!from) return null;
+  const body =
+    obj.body ??
+    obj.text ??
+    obj.content ??
+    (obj.message && (obj.message.conversation ?? (typeof obj.message === 'string' ? obj.message : null))) ??
+    '';
+  const id = obj.id ?? obj.messageId ?? obj.key?.id ?? null;
+  const messageId = id != null ? String(id) : `webhook-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const fromJid = from.includes('@') ? from : `${from}@c.us`;
+  return { fromJid, senderDisplay: from, body: String(body), messageId };
+}
+
+app.post(
+  '/webhook/wahub/:instanceId',
+  express.raw({ type: 'application/json', limit: '1mb' }),
+  requireWebhookAuth,
+  (req, res) => {
+    const instanceId = req.instanceId;
+    const rawBody = req.body; // Buffer
+    const webhookSecret = process.env.WEBHOOK_SECRET;
+
+    if (webhookSecret) {
+      const sigHeader = req.headers['x-webhook-signature'] || req.headers['x-wahub-signature'];
+      if (!sigHeader || typeof sigHeader !== 'string') {
+        return res.status(401).json({ success: false, error: 'Missing webhook signature' });
+      }
+      const expectedHex = sigHeader.replace(/^sha256=/i, '');
+      const hmac = crypto.createHmac('sha256', webhookSecret);
+      hmac.update(rawBody);
+      const actualHex = hmac.digest('hex');
+      if (actualHex !== expectedHex) {
+        return res.status(401).json({ success: false, error: 'Invalid webhook signature' });
+      }
+    }
+
+    let payload;
+    try {
+      payload = JSON.parse(rawBody.toString('utf8'));
+    } catch (e) {
+      return res.status(400).json({ success: false, error: 'Invalid JSON body' });
+    }
+
+    const messages = [];
+    const event = payload.event ?? payload.type ?? payload.eventType;
+    const data = payload.data ?? payload.payload?.data ?? payload.payload ?? payload;
+
+    if (event === 'message' && data && !Array.isArray(data)) {
+      const norm = normalizeWebhookMessage(data);
+      if (norm) messages.push(norm);
+    } else if ((event === 'messages' || event === 'message') && Array.isArray(data)) {
+      for (const item of data) {
+        const norm = normalizeWebhookMessage(item);
+        if (norm) messages.push(norm);
+      }
+    } else if (payload.message && !Array.isArray(payload.message)) {
+      const norm = normalizeWebhookMessage(payload.message);
+      if (norm) messages.push(norm);
+    } else if (Array.isArray(payload.messages)) {
+      for (const item of payload.messages) {
+        const norm = normalizeWebhookMessage(item);
+        if (norm) messages.push(norm);
+      }
+    } else if (data && Array.isArray(data.messages)) {
+      for (const item of data.messages) {
+        const norm = normalizeWebhookMessage(item);
+        if (norm) messages.push(norm);
+      }
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    for (const msg of messages) {
+      db.insertMessage(instanceId, msg.messageId, msg.fromJid, msg.senderDisplay, msg.body, now);
+      const eventPayload = {
+        type: 'message',
+        instanceId,
+        message: {
+          messageId: msg.messageId,
+          from: msg.fromJid,
+          to: null,
+          body: msg.body,
+          timestamp: now,
+          fromMe: false,
+          hasMedia: false,
+          type: null,
+          author: null,
+          isStatus: false,
+          isForwarded: false,
+          hasQuotedMsg: false,
+          senderDisplay: msg.senderDisplay
+        }
+      };
+      broadcastToInstance(instanceId, eventPayload);
+    }
+
+    res.status(200).json({ success: true, received: true });
+  }
+);
+
 // User management (admin only)
 app.get('/api/users', requireAdmin, (req, res) => {
   res.json(db.getAllUsers());
@@ -551,16 +673,11 @@ server.on('upgrade', (request, socket, head) => {
     }
   };
   sessionMiddleware(request, res, () => {
-    if (!request.session?.userId) {
-      socket.destroy();
-      return;
+    if (request.session?.userId) {
+      const user = db.getUserById(request.session.userId);
+      if (user) request.user = user;
     }
-    const user = db.getUserById(request.session.userId);
-    if (!user) {
-      socket.destroy();
-      return;
-    }
-    request.user = user;
+    if (!request.user) request.user = null; // allow connection for API-key auth on first message
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit('connection', ws, request);
     });
@@ -570,20 +687,34 @@ server.on('upgrade', (request, socket, head) => {
 wss.on('connection', (ws, req) => {
   const user = req.user;
   let currentInstanceId = null;
-  let authenticated = true; // already verified in upgrade
+  let authenticatedBySession = !!user;
+  let apiKeyInstanceId = null; // set when client authenticates with API key
 
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message);
 
+      // Session clients can send 'auth' as no-op; API-key clients must send auth with apiKey first
       if (data.type === 'auth') {
-        ws.send(JSON.stringify({ type: 'auth_success' }));
+        if (data.apiKey) {
+          const keyInstanceId = db.getInstanceIdByApiKey(data.apiKey);
+          if (!keyInstanceId || !whatsappInstances.has(keyInstanceId)) {
+            ws.send(JSON.stringify({ type: 'error', message: 'Invalid API key or instance' }));
+            return;
+          }
+          apiKeyInstanceId = keyInstanceId;
+          ws.send(JSON.stringify({ type: 'auth_success', instanceId: keyInstanceId }));
+        } else {
+          ws.send(JSON.stringify({ type: 'auth_success' }));
+        }
         return;
       }
 
       if (data.type === 'subscribe' && data.instanceId) {
         const instanceId = data.instanceId;
-        if (!db.userCanAccessInstance(user.id, user.role, instanceId)) {
+        const allowedBySession = authenticatedBySession && user && db.userCanAccessInstance(user.id, user.role, instanceId);
+        const allowedByApiKey = apiKeyInstanceId !== null && instanceId === apiKeyInstanceId;
+        if (!allowedBySession && !allowedByApiKey) {
           ws.send(JSON.stringify({ type: 'error', message: 'Access denied to this instance' }));
           return;
         }
