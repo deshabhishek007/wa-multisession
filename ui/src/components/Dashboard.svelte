@@ -244,7 +244,7 @@
 
   onMount(async () => {
     await ensureUser();
-    loadInstances();
+    await loadInstances();
     initWebSocket();
     if (user?.role === 'admin') {
       loadUsers();

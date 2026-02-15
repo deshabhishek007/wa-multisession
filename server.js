@@ -266,7 +266,7 @@ async function createAndInitializeInstance(instanceId) {
     broadcastToInstance(instanceId, { type: 'disconnected', instanceId, reason });
   });
 
-  // Incoming message listener: save to DB and broadcast to WebSocket subscribers
+  // Incoming message listener: save to DB and broadcast to WebSocket subscribers (always announce to subscribers)
   client.on('message', async (message) => {
     if (message.fromMe) return;
     const id = message.id;
@@ -288,7 +288,11 @@ async function createAndInitializeInstance(instanceId) {
       if (fromJid) senderDisplay = fromJid.replace('@c.us', '').replace('@g.us', '');
     }
 
-    db.insertMessage(instanceId, messageIdSerialized, fromJid, senderDisplay, body, messageTimestamp);
+    try {
+      db.insertMessage(instanceId, messageIdSerialized, fromJid, senderDisplay, body, messageTimestamp);
+    } catch (e) {
+      console.error(`[message] instance=${instanceId} insertMessage failed:`, e.message);
+    }
 
     const payload = {
       messageId: messageIdSerialized,
@@ -540,7 +544,11 @@ app.post(
 
     const now = Math.floor(Date.now() / 1000);
     for (const msg of messages) {
-      db.insertMessage(instanceId, msg.messageId, msg.fromJid, msg.senderDisplay, msg.body, now);
+      try {
+        db.insertMessage(instanceId, msg.messageId, msg.fromJid, msg.senderDisplay, msg.body, now);
+      } catch (e) {
+        console.error(`[webhook] instance=${instanceId} insertMessage failed:`, e.message);
+      }
       const eventPayload = {
         type: 'message',
         instanceId,
@@ -561,6 +569,10 @@ app.post(
         }
       };
       broadcastToInstance(instanceId, eventPayload);
+      const subscriberCount = instanceClients.has(instanceId) ? instanceClients.get(instanceId).size : 0;
+      if (subscriberCount > 0) {
+        console.log(`[webhook] instance=${instanceId} broadcast message to ${subscriberCount} subscriber(s)`);
+      }
     }
 
     res.status(200).json({ success: true, received: true });
@@ -747,17 +759,16 @@ wss.on('connection', (ws, req) => {
   });
 });
 
+/** Notify all WebSocket subscribers for this instance (used for both native client.on('message') and webhook POST). */
 function broadcastToInstance(instanceId, message) {
-  if (instanceClients.has(instanceId)) {
-    const clients = instanceClients.get(instanceId);
-    const messageStr = JSON.stringify(message);
-    
-    clients.forEach(client => {
-      if (client.readyState === 1) { // WebSocket.OPEN
-        client.send(messageStr);
-      }
-    });
-  }
+  if (!instanceClients.has(instanceId)) return;
+  const clients = instanceClients.get(instanceId);
+  const messageStr = JSON.stringify(message);
+  clients.forEach((client) => {
+    if (client.readyState === 1) {
+      client.send(messageStr);
+    }
+  });
 }
 
 // Serve the main page (Svelte build if present, else legacy public)
