@@ -470,7 +470,12 @@ app.get('/api/instances/:instanceId/messages', requireInstanceAccess, (req, res)
 // WaHub webhook: receive incoming message events for an instance (API key auth only). See wahub_webhook.md.
 function normalizeWebhookMessage(obj) {
   if (!obj || typeof obj !== 'object') return null;
-  const rawFrom = obj.from ?? obj.sender ?? (obj.remoteJid ? String(obj.remoteJid).replace(/@.*$/, '') : null);
+  const rawFrom =
+    obj.from ??
+    obj.sender ??
+    (obj.remoteJid ? String(obj.remoteJid).replace(/@.*$/, '') : null) ??
+    (obj.key && (obj.key.remoteJid || obj.key.from) ? String(obj.key.remoteJid || obj.key.from).replace(/@.*$/, '') : null) ??
+    null;
   const from = rawFrom ? String(rawFrom).replace(/\D/g, '') : null;
   if (!from) return null;
   const body =
@@ -541,6 +546,15 @@ app.post(
         if (norm) messages.push(norm);
       }
     }
+    // Fallback: treat whole payload as one message (e.g. { from, body } or { from, text } at top level)
+    if (messages.length === 0) {
+      const norm = normalizeWebhookMessage(payload);
+      if (norm) messages.push(norm);
+    }
+
+    if (messages.length === 0) {
+      console.warn('[webhook] no messages extracted from payload; keys:', Object.keys(payload).join(', '), 'sample:', JSON.stringify(payload).slice(0, 300));
+    }
 
     const now = Math.floor(Date.now() / 1000);
     for (const msg of messages) {
@@ -568,13 +582,15 @@ app.post(
           senderDisplay: msg.senderDisplay
         }
       };
-      broadcastToInstance(instanceId, eventPayload);
-      const subscriberCount = instanceClients.has(instanceId) ? instanceClients.get(instanceId).size : 0;
-      if (subscriberCount > 0) {
-        console.log(`[webhook] instance=${instanceId} broadcast message to ${subscriberCount} subscriber(s)`);
+      const broadcastResult = broadcastToInstance(instanceId, eventPayload, true);
+      if (broadcastResult.failed > 0 && broadcastResult.errors.length > 0) {
+        console.error(`[webhook] instance=${instanceId} messageId=${msg.messageId} broadcast errors:`, broadcastResult.errors);
       }
     }
 
+    if (messages.length > 0) {
+      console.log(`[webhook] instance=${instanceId} received ${messages.length} message(s), stored and announced to listeners (see above for delivery)`);
+    }
     res.status(200).json({ success: true, received: true });
   }
 );
@@ -759,16 +775,55 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-/** Notify all WebSocket subscribers for this instance (used for both native client.on('message') and webhook POST). */
-function broadcastToInstance(instanceId, message) {
-  if (!instanceClients.has(instanceId)) return;
+/**
+ * Notify all WebSocket subscribers for this instance (used for both native client.on('message') and webhook POST).
+ * Returns { sent, failed, errors } for logging. Logs delivery result when fromWebhook is true.
+ */
+function broadcastToInstance(instanceId, message, fromWebhook = false) {
+  const result = { sent: 0, failed: 0, errors: [] };
+  if (!instanceClients.has(instanceId)) {
+    if (fromWebhook) {
+      console.log(`[webhook] instance=${instanceId} no WebSocket subscribers; message not announced to any listener`);
+    }
+    return result;
+  }
   const clients = instanceClients.get(instanceId);
-  const messageStr = JSON.stringify(message);
+  let messageStr;
+  try {
+    messageStr = JSON.stringify(message);
+  } catch (e) {
+    if (fromWebhook) {
+      console.error(`[webhook] instance=${instanceId} broadcast failed (serialize):`, e.message);
+    }
+    result.errors.push(e.message);
+    result.failed = clients.size;
+    return result;
+  }
   clients.forEach((client) => {
-    if (client.readyState === 1) {
+    if (client.readyState !== 1) {
+      result.failed += 1;
+      result.errors.push('client not open');
+      return;
+    }
+    try {
       client.send(messageStr);
+      result.sent += 1;
+    } catch (e) {
+      result.failed += 1;
+      result.errors.push(e.message);
+      if (fromWebhook) {
+        console.error(`[webhook] instance=${instanceId} send to one listener failed:`, e.message);
+      }
     }
   });
+  if (fromWebhook) {
+    if (result.sent > 0 && result.failed === 0) {
+      console.log(`[webhook] instance=${instanceId} message announced to ${result.sent} listener(s) OK`);
+    } else if (result.failed > 0) {
+      console.warn(`[webhook] instance=${instanceId} message announced to ${result.sent} listener(s), ${result.failed} failed:`, result.errors.slice(0, 3).join('; '));
+    }
+  }
+  return result;
 }
 
 // Serve the main page (Svelte build if present, else legacy public)
