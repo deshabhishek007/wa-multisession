@@ -175,6 +175,19 @@ Our webhook endpoint is **POST** `/webhook/wahub/:instanceId` (authenticated wit
 
 ---
 
-## 8. See also
+## 8. Troubleshooting: messages not reaching the WebSocket listener
+
+- **Log: `[webhook] ignored non-message payload (e.g. webhook registration/config)`**  
+  The request body was not a message event (e.g. only `webhookUrl` or config). We respond 200 but do not store or broadcast. No change needed; ensure WaHub is also configured to send **message** events when someone sends a WhatsApp message.
+
+- **Log: `[webhook] no messages extracted from payload; keys: ... full body (truncated): ...`**  
+  The body didn’t match any of our supported shapes (§ 2). Check the logged keys and body: if WaHub sends a different format, you can share it to add support. For messages to reach your WebSocket listener, WaHub must POST with at least `event` + `data` (or `message`) and each message must have `from` and one of `body`/`text`/`content`.
+
+- **Webhook URL**  
+  The URL WaHub calls must be **this app’s** server (where this Node app runs), not WaHub’s own domain. Example: if this app runs at `https://mycompany.com`, register `https://mycompany.com/webhook/wahub/dailyinsp` in WaHub (with the instance API key in the request).
+
+---
+
+## 9. See also
 
 - **[MESSAGE_API.md](MESSAGE_API.md)** – How this app sends messages via WaHub (env vars, curl examples).

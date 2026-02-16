@@ -545,6 +545,9 @@ app.post(
         const norm = normalizeWebhookMessage(item);
         if (norm) messages.push(norm);
       }
+    } else if (payload.payload && typeof payload.payload === 'object' && !Array.isArray(payload.payload)) {
+      const norm = normalizeWebhookMessage(payload.payload);
+      if (norm) messages.push(norm);
     }
     // Fallback: treat whole payload as one message (e.g. { from, body } or { from, text } at top level)
     if (messages.length === 0) {
@@ -553,7 +556,13 @@ app.post(
     }
 
     if (messages.length === 0) {
-      console.warn('[webhook] no messages extracted from payload; keys:', Object.keys(payload).join(', '), 'sample:', JSON.stringify(payload).slice(0, 300));
+      const keys = Object.keys(payload);
+      const isConfigOnly = keys.length <= 2 && (keys.includes('webhookUrl') || keys.every((k) => ['webhookUrl', 'event', 'type'].includes(k)));
+      if (isConfigOnly && (payload.webhookUrl != null || (payload.event === 'webhook' || payload.type === 'webhook'))) {
+        console.log('[webhook] ignored non-message payload (e.g. webhook registration/config); keys:', keys.join(', '));
+      } else {
+        console.warn('[webhook] no messages extracted from payload; keys:', keys.join(', '), 'full body (truncated):', JSON.stringify(payload).slice(0, 600));
+      }
     }
 
     const now = Math.floor(Date.now() / 1000);
