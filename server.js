@@ -309,7 +309,7 @@ async function createAndInitializeInstance(instanceId) {
       hasQuotedMsg: Boolean(message.hasQuotedMsg),
       senderDisplay
     };
-    broadcastToInstance(instanceId, { type: 'message', instanceId, message: payload });
+    broadcastToInstance(instanceId, { type: 'message', instanceId, message: payload }, 'native');
   });
 
   await client.initialize();
@@ -582,7 +582,7 @@ app.post(
           senderDisplay: msg.senderDisplay
         }
       };
-      const broadcastResult = broadcastToInstance(instanceId, eventPayload, true);
+      const broadcastResult = broadcastToInstance(instanceId, eventPayload, 'webhook');
       if (broadcastResult.failed > 0 && broadcastResult.errors.length > 0) {
         console.error(`[webhook] instance=${instanceId} messageId=${msg.messageId} broadcast errors:`, broadcastResult.errors);
       }
@@ -777,13 +777,14 @@ wss.on('connection', (ws, req) => {
 
 /**
  * Notify all WebSocket subscribers for this instance (used for both native client.on('message') and webhook POST).
- * Returns { sent, failed, errors } for logging. Logs delivery result when fromWebhook is true.
+ * Returns { sent, failed, errors }. Logs delivery when logOrigin is 'webhook' or 'native'.
  */
-function broadcastToInstance(instanceId, message, fromWebhook = false) {
+function broadcastToInstance(instanceId, message, logOrigin = null) {
+  const tag = logOrigin === 'webhook' ? 'webhook' : logOrigin === 'native' ? 'message' : null;
   const result = { sent: 0, failed: 0, errors: [] };
   if (!instanceClients.has(instanceId)) {
-    if (fromWebhook) {
-      console.log(`[webhook] instance=${instanceId} no WebSocket subscribers; message not announced to any listener`);
+    if (tag) {
+      console.log(`[${tag}] instance=${instanceId} no WebSocket subscribers; message not announced to any listener`);
     }
     return result;
   }
@@ -792,8 +793,8 @@ function broadcastToInstance(instanceId, message, fromWebhook = false) {
   try {
     messageStr = JSON.stringify(message);
   } catch (e) {
-    if (fromWebhook) {
-      console.error(`[webhook] instance=${instanceId} broadcast failed (serialize):`, e.message);
+    if (tag) {
+      console.error(`[${tag}] instance=${instanceId} broadcast failed (serialize):`, e.message);
     }
     result.errors.push(e.message);
     result.failed = clients.size;
@@ -811,16 +812,16 @@ function broadcastToInstance(instanceId, message, fromWebhook = false) {
     } catch (e) {
       result.failed += 1;
       result.errors.push(e.message);
-      if (fromWebhook) {
-        console.error(`[webhook] instance=${instanceId} send to one listener failed:`, e.message);
+      if (tag) {
+        console.error(`[${tag}] instance=${instanceId} send to one listener failed:`, e.message);
       }
     }
   });
-  if (fromWebhook) {
+  if (tag) {
     if (result.sent > 0 && result.failed === 0) {
-      console.log(`[webhook] instance=${instanceId} message announced to ${result.sent} listener(s) OK`);
+      console.log(`[${tag}] instance=${instanceId} message announced to ${result.sent} listener(s) OK`);
     } else if (result.failed > 0) {
-      console.warn(`[webhook] instance=${instanceId} message announced to ${result.sent} listener(s), ${result.failed} failed:`, result.errors.slice(0, 3).join('; '));
+      console.warn(`[${tag}] instance=${instanceId} message announced to ${result.sent} listener(s), ${result.failed} failed:`, result.errors.slice(0, 3).join('; '));
     }
   }
   return result;
