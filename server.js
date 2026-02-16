@@ -752,6 +752,7 @@ wss.on('connection', (ws, req) => {
           instanceClients.set(currentInstanceId, new Set());
         }
         instanceClients.get(currentInstanceId).add(ws);
+        ws._subscribeAuth = authenticatedBySession ? 'session' : 'apikey';
 
         if (whatsappInstances.has(currentInstanceId)) {
           const instance = whatsappInstances.get(currentInstanceId);
@@ -777,6 +778,7 @@ wss.on('connection', (ws, req) => {
 
 /**
  * Notify all WebSocket subscribers for this instance (used for both native client.on('message') and webhook POST).
+ * Removes dead connections (readyState !== OPEN) from the set so counts stay accurate.
  * Returns { sent, failed, errors }. Logs delivery when logOrigin is 'webhook' or 'native'.
  */
 function broadcastToInstance(instanceId, message, logOrigin = null) {
@@ -789,6 +791,23 @@ function broadcastToInstance(instanceId, message, logOrigin = null) {
     return result;
   }
   const clients = instanceClients.get(instanceId);
+  const OPEN = 1;
+  // Remove dead connections so we don't keep counting closed scripts/tabs
+  const toRemove = [];
+  clients.forEach((client) => {
+    if (client.readyState !== OPEN) {
+      toRemove.push(client);
+    }
+  });
+  toRemove.forEach((c) => clients.delete(c));
+  const openCount = clients.size;
+  if (openCount === 0) {
+    if (tag) {
+      console.log(`[${tag}] instance=${instanceId} 0 listeners (${toRemove.length} dead connection(s) removed); message not announced`);
+    }
+    return result;
+  }
+
   let messageStr;
   try {
     messageStr = JSON.stringify(message);
@@ -797,11 +816,13 @@ function broadcastToInstance(instanceId, message, logOrigin = null) {
       console.error(`[${tag}] instance=${instanceId} broadcast failed (serialize):`, e.message);
     }
     result.errors.push(e.message);
-    result.failed = clients.size;
+    result.failed = openCount;
     return result;
   }
+  const authCounts = { session: 0, apikey: 0 };
   clients.forEach((client) => {
-    if (client.readyState !== 1) {
+    if (client.readyState !== OPEN) {
+      clients.delete(client);
       result.failed += 1;
       result.errors.push('client not open');
       return;
@@ -809,19 +830,28 @@ function broadcastToInstance(instanceId, message, logOrigin = null) {
     try {
       client.send(messageStr);
       result.sent += 1;
+      const a = client._subscribeAuth || '';
+      if (a === 'session') authCounts.session += 1;
+      else if (a === 'apikey') authCounts.apikey += 1;
     } catch (e) {
+      clients.delete(client);
       result.failed += 1;
       result.errors.push(e.message);
       if (tag) {
-        console.error(`[${tag}] instance=${instanceId} send to one listener failed:`, e.message);
+        console.error(`[${tag}] instance=${instanceId} send failed (listener removed):`, e.message);
       }
     }
   });
   if (tag) {
+    const deadNote = toRemove.length > 0 ? ` (${toRemove.length} dead removed)` : '';
+    const parts = [];
+    if (authCounts.session) parts.push(`${authCounts.session} session`);
+    if (authCounts.apikey) parts.push(`${authCounts.apikey} apikey`);
+    const authSummary = parts.length ? ` [${parts.join(', ')}]` : '';
     if (result.sent > 0 && result.failed === 0) {
-      console.log(`[${tag}] instance=${instanceId} message announced to ${result.sent} listener(s) OK`);
+      console.log(`[${tag}] instance=${instanceId} ${result.sent} listener(s)${authSummary}${deadNote} → announced OK`);
     } else if (result.failed > 0) {
-      console.warn(`[${tag}] instance=${instanceId} message announced to ${result.sent} listener(s), ${result.failed} failed:`, result.errors.slice(0, 3).join('; '));
+      console.warn(`[${tag}] instance=${instanceId} ${result.sent} sent, ${result.failed} failed${deadNote}:`, result.errors.slice(0, 3).join('; '));
     }
   }
   return result;
