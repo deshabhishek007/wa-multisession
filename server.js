@@ -779,8 +779,10 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
+    console.log('WebSocket closed:', currentInstanceId);
     if (currentInstanceId && instanceClients.has(currentInstanceId)) {
       instanceClients.get(currentInstanceId).delete(ws);
+      console.log('WebSocket deleted:', currentInstanceId);
     }
   });
 });
