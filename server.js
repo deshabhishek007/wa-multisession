@@ -49,8 +49,7 @@ function getMimetype(filename, explicit) {
 }
 function toChatId(to, isGroup) {
   const raw = String(to).trim();
-  if (raw.includes('@')) return raw; // already a full JID, use as-is
-  if (isGroup) return raw + '@g.us';
+  if (isGroup) return raw + '@g.us'; // group IDs may contain hyphens — do not strip
   return raw.replace(/\D/g, '') + '@c.us';
 }
 const app = express();
