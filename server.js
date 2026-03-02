@@ -84,12 +84,14 @@ const sessionMiddleware = session({
 });
 app.use(sessionMiddleware);
 app.set('trust proxy', 1); // trust first proxy
+// JSON body size limit: allow large send-file payloads (base64 is ~1.33x file size). Default 10mb.
+const JSON_BODY_LIMIT = process.env.JSON_BODY_LIMIT || '10mb';
 // Skip JSON body parsing for webhook path so we can use raw body for signature verification
 app.use((req, res, next) => {
   if (req.path.startsWith('/webhook/')) return next();
-  express.json()(req, res, next);
+  express.json({ limit: JSON_BODY_LIMIT })(req, res, next);
 });
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true, limit: JSON_BODY_LIMIT }));
 app.use(express.static('public'));
 const uiDist = join(__dirname, 'ui', 'dist');
 if (existsSync(uiDist)) {
