@@ -418,7 +418,7 @@ app.post('/api/instances/:instanceId/send-message', requireInstanceAccess, async
 
 // Send file with optional caption. Body: { to, filename, fileBase64, caption?, mimetype? }
 app.post('/api/instances/:instanceId/send-file', requireInstanceAccess, async (req, res) => {
-  const { to, filename, fileBase64, caption, mimetype } = req.body;
+  const { to, filename, fileBase64, caption, mimetype, isGroup } = req.body;
   const instanceId = req.instanceId;
   console.log(`[send-file] instance=${instanceId} to=${to || '(missing)'} filename=${filename || '(missing)'} captionLength=${caption != null ? String(caption).length : 0}`);
 
@@ -442,7 +442,7 @@ app.post('/api/instances/:instanceId/send-file', requireInstanceAccess, async (r
   }
   const type = getMimetype(filename, mimetype);
   const media = new MessageMedia(type, data, filename, buffer.length);
-  const chatId = String(to).replace(/\D/g, '') + '@c.us';
+  const chatId = toChatId(to, isGroup);
   // Optional caption: request body field "caption" → sendMessage(chatId, media, { caption: '...' })
   const sendOpts = typeof caption === 'string' && caption.length > 0 ? { caption } : {};
   try {
