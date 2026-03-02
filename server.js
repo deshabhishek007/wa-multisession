@@ -47,6 +47,12 @@ function getMimetype(filename, explicit) {
   const ext = filename.split('.').pop()?.toLowerCase();
   return MIME_BY_EXT[ext] || 'application/octet-stream';
 }
+function toChatId(to, isGroup) {
+  const raw = String(to).trim();
+  if (raw.includes('@')) return raw; // already a full JID, use as-is
+  if (isGroup) return raw + '@g.us';
+  return raw.replace(/\D/g, '') + '@c.us';
+}
 const app = express();
 const server = createServer(app);
 const __filename = fileURLToPath(import.meta.url);
@@ -388,7 +394,7 @@ app.post('/api/instances/:instanceId/api-key/regenerate', requireInstanceAccess,
 
 // Send message (session or API key auth). Body: { to: string (phone with country code), message: string }
 app.post('/api/instances/:instanceId/send-message', requireInstanceAccess, async (req, res) => {
-  const { to, message } = req.body;
+  const { to, message, isGroup } = req.body;
   const instanceId = req.instanceId;
   console.log(`[send-message] instance=${instanceId} to=${to || '(missing)'} messageLength=${message != null ? String(message).length : 0}`);
 
@@ -400,7 +406,7 @@ app.post('/api/instances/:instanceId/send-message', requireInstanceAccess, async
     console.log(`[send-message] instance=${instanceId} rejected: not ready (status=${instance?.status})`);
     return res.status(503).json({ error: 'Instance not ready. Wait for WhatsApp to connect.' });
   }
-  const chatId = String(to).replace(/\D/g, '') + '@c.us';
+  const chatId = toChatId(to, isGroup);
   try {
     const sent = await instance.client.sendMessage(chatId, message);
     console.log(`[send-message] instance=${instanceId} to=${chatId} success messageId=${sent.id?._serialized || '(n/a)'}`);
