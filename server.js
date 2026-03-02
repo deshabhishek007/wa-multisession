@@ -47,11 +47,6 @@ function getMimetype(filename, explicit) {
   const ext = filename.split('.').pop()?.toLowerCase();
   return MIME_BY_EXT[ext] || 'application/octet-stream';
 }
-function toChatId(to, isGroup) {
-  const raw = String(to).trim().replace(/@(c\.us|g\.us|s\.whatsapp\.net)$/i, '');
-  if (isGroup) return raw + '@g.us'; // group IDs may contain hyphens — do not strip
-  return raw.replace(/\D/g, '') + '@c.us';
-}
 const app = express();
 const server = createServer(app);
 const __filename = fileURLToPath(import.meta.url);
@@ -312,8 +307,7 @@ async function createAndInitializeInstance(instanceId) {
       isStatus: Boolean(message.isStatus),
       isForwarded: Boolean(message.isForwarded),
       hasQuotedMsg: Boolean(message.hasQuotedMsg),
-      senderDisplay,
-      chatType: fromJid?.endsWith('@g.us') ? 'group' : 'private'
+      senderDisplay
     };
     broadcastToInstance(instanceId, { type: 'message', instanceId, message: payload }, 'native');
   });
@@ -394,11 +388,12 @@ app.post('/api/instances/:instanceId/api-key/regenerate', requireInstanceAccess,
 
 // Send message (session or API key auth). Body: { to: string (phone with country code), message: string }
 app.post('/api/instances/:instanceId/send-message', requireInstanceAccess, async (req, res) => {
-  const { to, message, isGroup } = req.body;
+  const { to, message } = req.body;
   const instanceId = req.instanceId;
-  console.log(`[send-message] instance=${instanceId} to=${to || '(missing)'} messageLength=${message != null ? String(message).length : 0}`);
+  console.log(`[send-message] request instance=${instanceId} to=${to || '(missing)'} messageLength=${message != null ? String(message).length : 0}`);
 
   if (!to || !message || typeof message !== 'string') {
+    console.log(`[send-message] instance=${instanceId} validation failed: to and message required`);
     return res.status(400).json({ error: 'to and message required' });
   }
   const instance = whatsappInstances.get(instanceId);
@@ -406,7 +401,8 @@ app.post('/api/instances/:instanceId/send-message', requireInstanceAccess, async
     console.log(`[send-message] instance=${instanceId} rejected: not ready (status=${instance?.status})`);
     return res.status(503).json({ error: 'Instance not ready. Wait for WhatsApp to connect.' });
   }
-  const chatId = toChatId(to, isGroup);
+  const chatId = String(to).replace(/\D/g, '') + '@c.us';
+  console.log(`[send-message] instance=${instanceId} sending to chatId=${chatId}`);
   try {
     const sent = await instance.client.sendMessage(chatId, message);
     console.log(`[send-message] instance=${instanceId} to=${chatId} success messageId=${sent.id?._serialized || '(n/a)'}`);
@@ -419,11 +415,12 @@ app.post('/api/instances/:instanceId/send-message', requireInstanceAccess, async
 
 // Send file with optional caption. Body: { to, filename, fileBase64, caption?, mimetype? }
 app.post('/api/instances/:instanceId/send-file', requireInstanceAccess, async (req, res) => {
-  const { to, filename, fileBase64, caption, mimetype, isGroup } = req.body;
+  const { to, filename, fileBase64, caption, mimetype } = req.body;
   const instanceId = req.instanceId;
-  console.log(`[send-file] instance=${instanceId} to=${to || '(missing)'} filename=${filename || '(missing)'} captionLength=${caption != null ? String(caption).length : 0}`);
+  console.log(`[send-file] request instance=${instanceId} to=${to || '(missing)'} filename=${filename || '(missing)'} captionLength=${caption != null ? String(caption).length : 0}`);
 
   if (!to || !filename || !fileBase64 || typeof fileBase64 !== 'string') {
+    console.log(`[send-file] instance=${instanceId} validation failed: to, filename and fileBase64 required`);
     return res.status(400).json({ error: 'to, filename and fileBase64 required' });
   }
   const instance = whatsappInstances.get(instanceId);
@@ -439,11 +436,13 @@ app.post('/api/instances/:instanceId/send-file', requireInstanceAccess, async (r
   try {
     buffer = Buffer.from(data, 'base64');
   } catch (e) {
+    console.log(`[send-file] instance=${instanceId} invalid base64 in fileBase64: ${e.message}`);
     return res.status(400).json({ error: 'Invalid base64 in fileBase64' });
   }
   const type = getMimetype(filename, mimetype);
   const media = new MessageMedia(type, data, filename, buffer.length);
-  const chatId = toChatId(to, isGroup);
+  const chatId = String(to).replace(/\D/g, '') + '@c.us';
+  console.log(`[send-file] instance=${instanceId} sending file to chatId=${chatId} filename=${filename} mimetype=${type} size=${buffer.length} bytes`);
   // Optional caption: request body field "caption" → sendMessage(chatId, media, { caption: '...' })
   const sendOpts = typeof caption === 'string' && caption.length > 0 ? { caption } : {};
   try {
@@ -468,8 +467,7 @@ app.get('/api/instances/:instanceId/messages', requireInstanceAccess, (req, res)
     senderDisplay: r.sender_display,
     body: r.body,
     timestamp: r.message_timestamp,
-    createdAt: r.created_at,
-    chatType: r.from_jid?.endsWith('@g.us') ? 'group' : 'private'
+    createdAt: r.created_at
   }));
   res.json(messages);
 });
@@ -595,8 +593,7 @@ app.post(
           isStatus: false,
           isForwarded: false,
           hasQuotedMsg: false,
-          senderDisplay: msg.senderDisplay,
-          chatType: msg.fromJid?.endsWith('@g.us') ? 'group' : 'private'
+          senderDisplay: msg.senderDisplay
         }
       };
       const broadcastResult = broadcastToInstance(instanceId, eventPayload, 'webhook');
@@ -787,10 +784,8 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
-    console.log('WebSocket closed:', currentInstanceId);
     if (currentInstanceId && instanceClients.has(currentInstanceId)) {
       instanceClients.get(currentInstanceId).delete(ws);
-      console.log('WebSocket deleted:', currentInstanceId);
     }
   });
 });

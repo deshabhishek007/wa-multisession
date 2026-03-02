@@ -196,14 +196,12 @@ Generates a new API key; the previous key stops working.
 ```json
 {
   "to": "919876543210",
-  "message": "Hello from API",
-  "isGroup": false
+  "message": "Hello from API"
 }
 ```
 
 - **to:** Phone number with country code, digits only (e.g. `919876543210`). No `+` or spaces.
 - **message:** Text to send.
-- **isGroup:** Optional boolean. Set to `true` if `to` is a WhatsApp group ID (e.g. `120363xxxxxx`). The group ID is the numeric portion of the group JID (without `@g.us`). Group IDs may contain hyphens — pass them as-is. If omitted or `false`, `to` is treated as a phone number (DM).
 
 **Success (200):**
 
@@ -225,15 +223,6 @@ curl -X POST "http://localhost:3000/api/instances/client1/send-message" \
   -d '{"to": "919876543210", "message": "Hello"}'
 ```
 
-**Group example:**
-
-```bash
-curl -X POST "http://localhost:3000/api/instances/client1/send-message" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: YOUR_INSTANCE_API_KEY" \
-  -d '{"to": "120363xxxxxx", "isGroup": true, "message": "Hello group!"}'
-```
-
 ---
 
 ### POST /api/instances/:instanceId/send-file
@@ -250,8 +239,7 @@ Send a file with optional text caption. The file is provided as a base64 string.
   "filename": "document.pdf",
   "fileBase64": "JVBERi0xLjQK...",
   "caption": "Optional caption text",
-  "mimetype": "application/pdf",
-  "isGroup": false
+  "mimetype": "application/pdf"
 }
 ```
 
@@ -260,7 +248,6 @@ Send a file with optional text caption. The file is provided as a base64 string.
 - **fileBase64:** Base64-encoded file content. Optional data-URL prefix (e.g. `data:application/pdf;base64,`) is stripped if present.
 - **caption:** Optional. Text sent as the message caption with the file.
 - **mimetype:** Optional. MIME type (e.g. `image/png`, `application/pdf`). If omitted, inferred from `filename` extension.
-- **isGroup:** Optional boolean. Set to `true` to send the file to a WhatsApp group. Same behavior as in `send-message`.
 
 **Success (200):**
 
@@ -292,14 +279,12 @@ Returns the message log for the instance (incoming messages are stored in the da
     "senderDisplay": "John Doe",
     "body": "Hello!",
     "timestamp": 1234567890,
-    "createdAt": 1234567891,
-    "chatType": "private"
+    "createdAt": 1234567891
   }
 ]
 ```
 
 - **senderDisplay:** Name or number shown for the sender (suitable for "Name/Number : message" display).
-- **chatType:** `"private"` for direct messages, `"group"` for group chats.
 
 **Errors:** `401` — Invalid API key or access. `404` — Instance not found.
 
@@ -343,16 +328,16 @@ You can listen for **incoming WhatsApp messages** by connecting to the WebSocket
 
 **Events you may receive:**
 
-| `type` | Description |
-|--------|-------------|
+| `type`    | Description |
+|-----------|-------------|
 | `auth_success` | Response to `auth`. |
 | `status` | Current instance status and optional QR (after subscribe). |
-| `qr` | New QR code (data URL) for scanning. |
-| `ready` | Instance is connected and ready. |
+| `qr`     | New QR code (data URL) for scanning. |
+| `ready`  | Instance is connected and ready. |
 | `authenticated` | Instance authenticated. |
 | `disconnected` | Instance disconnected (payload may include `reason`). |
-| **`message`** | **Incoming WhatsApp message** (see below). |
-| `error` | e.g. `{ "message": "Access denied to this instance" }`. |
+| **`message`**  | **Incoming WhatsApp message** (see below). |
+| `error`  | e.g. `{ "message": "Access denied to this instance" }`. |
 
 **Incoming message payload (`type: "message"`):**
 
@@ -372,8 +357,7 @@ You can listen for **incoming WhatsApp messages** by connecting to the WebSocket
     "author": null,
     "isStatus": false,
     "isForwarded": false,
-    "hasQuotedMsg": false,
-    "chatType": "private"
+    "hasQuotedMsg": false
   }
 }
 ```
@@ -390,7 +374,6 @@ You can listen for **incoming WhatsApp messages** by connecting to the WebSocket
 - **isStatus:** `true` for status updates.
 - **isForwarded:** Whether the message was forwarded.
 - **hasQuotedMsg:** Whether the message is a reply to another.
-- **chatType:** `"private"` for direct/1:1 messages, `"group"` for group chats. Derived from the `from` JID suffix (`@g.us` = group, `@c.us` = private).
 
 To **watch for incoming messages**: open a WebSocket, subscribe to the desired `instanceId`, and handle frames where `type === 'message'`.
 
