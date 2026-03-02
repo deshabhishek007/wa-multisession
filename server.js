@@ -312,7 +312,8 @@ async function createAndInitializeInstance(instanceId) {
       isStatus: Boolean(message.isStatus),
       isForwarded: Boolean(message.isForwarded),
       hasQuotedMsg: Boolean(message.hasQuotedMsg),
-      senderDisplay
+      senderDisplay,
+      chatType: fromJid?.endsWith('@g.us') ? 'group' : 'private'
     };
     broadcastToInstance(instanceId, { type: 'message', instanceId, message: payload }, 'native');
   });
@@ -467,7 +468,8 @@ app.get('/api/instances/:instanceId/messages', requireInstanceAccess, (req, res)
     senderDisplay: r.sender_display,
     body: r.body,
     timestamp: r.message_timestamp,
-    createdAt: r.created_at
+    createdAt: r.created_at,
+    chatType: r.from_jid?.endsWith('@g.us') ? 'group' : 'private'
   }));
   res.json(messages);
 });
@@ -593,7 +595,8 @@ app.post(
           isStatus: false,
           isForwarded: false,
           hasQuotedMsg: false,
-          senderDisplay: msg.senderDisplay
+          senderDisplay: msg.senderDisplay,
+          chatType: msg.fromJid?.endsWith('@g.us') ? 'group' : 'private'
         }
       };
       const broadcastResult = broadcastToInstance(instanceId, eventPayload, 'webhook');
