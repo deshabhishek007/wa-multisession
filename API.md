@@ -343,16 +343,16 @@ You can listen for **incoming WhatsApp messages** by connecting to the WebSocket
 
 **Events you may receive:**
 
-| `type`    | Description |
-|-----------|-------------|
+| `type` | Description |
+|--------|-------------|
 | `auth_success` | Response to `auth`. |
 | `status` | Current instance status and optional QR (after subscribe). |
-| `qr`     | New QR code (data URL) for scanning. |
-| `ready`  | Instance is connected and ready. |
+| `qr` | New QR code (data URL) for scanning. |
+| `ready` | Instance is connected and ready. |
 | `authenticated` | Instance authenticated. |
 | `disconnected` | Instance disconnected (payload may include `reason`). |
-| **`message`**  | **Incoming WhatsApp message** (see below). |
-| `error`  | e.g. `{ "message": "Access denied to this instance" }`. |
+| **`message`** | **Incoming WhatsApp message** (see below). |
+| `error` | e.g. `{ "message": "Access denied to this instance" }`. |
 
 **Incoming message payload (`type: "message"`):**
 
