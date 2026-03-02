@@ -386,7 +386,14 @@ app.post('/api/instances/:instanceId/api-key/regenerate', requireInstanceAccess,
   res.json({ apiKey: newKey });
 });
 
-// Send message (session or API key auth). Body: { to: string (phone with country code), message: string }
+/** Normalize "to" to a WhatsApp chat JID: accept group JID (@g.us) or user JID (@c.us), or phone number → @c.us */
+function toChatId(to) {
+  const s = String(to).trim();
+  if (s.endsWith('@g.us') || s.endsWith('@c.us')) return s;
+  return s.replace(/\D/g, '') + '@c.us';
+}
+
+// Send message (session or API key auth). Body: { to: string (phone with country code or JID), message: string }
 app.post('/api/instances/:instanceId/send-message', requireInstanceAccess, async (req, res) => {
   const { to, message } = req.body;
   const instanceId = req.instanceId;
@@ -401,7 +408,7 @@ app.post('/api/instances/:instanceId/send-message', requireInstanceAccess, async
     console.log(`[send-message] instance=${instanceId} rejected: not ready (status=${instance?.status})`);
     return res.status(503).json({ error: 'Instance not ready. Wait for WhatsApp to connect.' });
   }
-  const chatId = String(to).replace(/\D/g, '') + '@c.us';
+  const chatId = toChatId(to);
   console.log(`[send-message] instance=${instanceId} sending to chatId=${chatId}`);
   try {
     const sent = await instance.client.sendMessage(chatId, message);
@@ -441,7 +448,7 @@ app.post('/api/instances/:instanceId/send-file', requireInstanceAccess, async (r
   }
   const type = getMimetype(filename, mimetype);
   const media = new MessageMedia(type, data, filename, buffer.length);
-  const chatId = String(to).replace(/\D/g, '') + '@c.us';
+  const chatId = toChatId(to);
   console.log(`[send-file] instance=${instanceId} sending file to chatId=${chatId} filename=${filename} mimetype=${type} size=${buffer.length} bytes`);
   // Optional caption: request body field "caption" → sendMessage(chatId, media, { caption: '...' })
   const sendOpts = typeof caption === 'string' && caption.length > 0 ? { caption } : {};

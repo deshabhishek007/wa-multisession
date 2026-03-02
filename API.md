@@ -200,7 +200,7 @@ Generates a new API key; the previous key stops working.
 }
 ```
 
-- **to:** Phone number with country code, digits only (e.g. `919876543210`). No `+` or spaces.
+- **to:** Phone number with country code (digits only, e.g. `919876543210`), or full JID: `number@c.us` (user) or `groupId@g.us` (group).
 - **message:** Text to send.
 
 **Success (200):**
@@ -243,7 +243,7 @@ Send a file with optional text caption. The file is provided as a base64 string.
 }
 ```
 
-- **to:** Phone number with country code, digits only.
+- **to:** Phone number (digits only) or full JID (`number@c.us` or `groupId@g.us`).
 - **filename:** Original filename (used for display and to infer mimetype if `mimetype` is omitted).
 - **fileBase64:** Base64-encoded file content. Optional data-URL prefix (e.g. `data:application/pdf;base64,`) is stripped if present.
 - **caption:** Optional. Text sent as the message caption with the file.
