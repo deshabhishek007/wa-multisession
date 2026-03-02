@@ -48,7 +48,7 @@ function getMimetype(filename, explicit) {
   return MIME_BY_EXT[ext] || 'application/octet-stream';
 }
 function toChatId(to, isGroup) {
-  const raw = String(to).trim();
+  const raw = String(to).trim().replace(/@(c\.us|g\.us|s\.whatsapp\.net)$/i, '');
   if (isGroup) return raw + '@g.us'; // group IDs may contain hyphens — do not strip
   return raw.replace(/\D/g, '') + '@c.us';
 }
