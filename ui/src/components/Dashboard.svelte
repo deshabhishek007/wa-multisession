@@ -340,7 +340,7 @@
 
   {#if messageLogInstanceId}
     <div class="message-log-overlay" role="dialog" aria-modal="true" aria-label="Message log">
-      <div class="message-log-backdrop" on:click={closeMessageLog} on:keydown={(e) => e.key === 'Escape' && closeMessageLog()} tabindex="-1"></div>
+      <button type="button" class="message-log-backdrop" aria-label="Close message log" on:click={closeMessageLog}></button>
       <div class="message-log-wrap">
         <MessageLog
           instanceId={messageLogInstanceId}
@@ -518,6 +518,9 @@
     position: absolute;
     inset: 0;
     background: rgba(0, 0, 0, 0.4);
+    border: none;
+    cursor: pointer;
+    padding: 0;
   }
   .message-log-wrap {
     position: relative;

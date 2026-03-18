@@ -92,6 +92,7 @@
   $: cardClass = instance.status === 'ready' ? 'active' : instance.status === 'qr_ready' ? 'pending' : '';
   $: statusClass = `status-${instance.status}`;
   $: isReady = instance.status === 'ready';
+  $: apiKeyInputId = `api-key-input-${instance.id}`;
   $: linkedAccountLabel = instance.linkedAccount?.label || instance.linkedAccount?.name || instance.linkedAccount?.number || '';
   $: previousLinkedAccountLabel =
     instance.previousLinkedAccount?.label || instance.previousLinkedAccount?.name || instance.previousLinkedAccount?.number || '';
@@ -136,9 +137,10 @@
     <h4 style="font-size: 13px; color: #555; margin-bottom: 8px;">View API key</h4>
     <p style="font-size: 11px; color: #888; margin-bottom: 8px;">Use header <code>X-API-Key: &lt;key&gt;</code> for instance API calls.</p>
     <div class="api-key-actions">
-      <label class="api-key-label">View / modify key</label>
+      <label class="api-key-label" for={apiKeyInputId}>View / modify key</label>
       <div class="api-key-row">
         <input
+          id={apiKeyInputId}
           type="text"
           class="api-key-input"
           readonly
