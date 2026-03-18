@@ -17,7 +17,6 @@
     error = '';
     try {
       messages = await api.getInstanceMessages(instanceId);
-      messages = messages.reverse();
     } catch (e) {
       error = e.message || 'Failed to load messages';
       messages = [];
@@ -34,13 +33,13 @@
     const dup = messages.some((m) => m.messageId === newMessage.messageId);
     if (!dup) {
       messages = [
-        ...messages,
         {
           senderDisplay: newMessage.senderDisplay || newMessage.from || 'Unknown',
           body: newMessage.body || '',
           messageId: newMessage.messageId,
           timestamp: newMessage.timestamp
-        }
+        },
+        ...messages
       ];
     }
   }
