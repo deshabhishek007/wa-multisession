@@ -18,6 +18,7 @@
 
   let messageLogInstanceId = null;
   let newMessageForLog = null;
+  let messageLogRefreshToken = 0;
 
   // Admin state
   let users = [];
@@ -67,13 +68,35 @@
         return;
       }
 
+      if (data.type === 'messages_cleared') {
+        if (messageLogInstanceId === data.instanceId) {
+          newMessageForLog = null;
+          messageLogRefreshToken += 1;
+        }
+        return;
+      }
+
       const idx = instances.findIndex((i) => i.id === data.instanceId);
       if (idx === -1) return;
 
       if (data.type === 'qr') {
-        instances[idx] = { ...instances[idx], status: 'qr_ready', qr: data.qr };
+        instances[idx] = {
+          ...instances[idx],
+          status: 'qr_ready',
+          qr: data.qr,
+          linkedAccount: data.linkedAccount ?? instances[idx].linkedAccount,
+          linkedAccountChanged: data.linkedAccountChanged ?? instances[idx].linkedAccountChanged,
+          previousLinkedAccount: data.previousLinkedAccount ?? instances[idx].previousLinkedAccount
+        };
       } else if (data.type === 'ready') {
-        instances[idx] = { ...instances[idx], status: 'ready', qr: null };
+        instances[idx] = {
+          ...instances[idx],
+          status: 'ready',
+          qr: null,
+          linkedAccount: data.linkedAccount ?? instances[idx].linkedAccount,
+          linkedAccountChanged: data.linkedAccountChanged ?? false,
+          previousLinkedAccount: data.previousLinkedAccount ?? null
+        };
       } else if (data.type === 'authenticated') {
         instances[idx] = { ...instances[idx], status: 'authenticated' };
       } else if (data.type === 'disconnected') {
@@ -82,7 +105,10 @@
         instances[idx] = {
           ...instances[idx],
           status: data.status,
-          qr: data.qr ?? instances[idx].qr
+          qr: data.qr ?? instances[idx].qr,
+          linkedAccount: data.linkedAccount ?? instances[idx].linkedAccount,
+          linkedAccountChanged: data.linkedAccountChanged ?? instances[idx].linkedAccountChanged,
+          previousLinkedAccount: data.previousLinkedAccount ?? instances[idx].previousLinkedAccount
         };
       }
       instances = instances;
@@ -143,6 +169,7 @@
   function handleOpenMessageLog(event) {
     messageLogInstanceId = event.detail?.instanceId ?? null;
     newMessageForLog = null;
+    messageLogRefreshToken = 0;
   }
 
   function closeMessageLog() {
@@ -318,6 +345,7 @@
         <MessageLog
           instanceId={messageLogInstanceId}
           newMessage={newMessageForLog}
+          refreshToken={messageLogRefreshToken}
           on:close={closeMessageLog}
         />
       </div>
@@ -484,7 +512,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 20px;
+    padding: 28px;
   }
   .message-log-backdrop {
     position: absolute;
@@ -494,5 +522,6 @@
   .message-log-wrap {
     position: relative;
     z-index: 1001;
+    width: min(94vw, 1080px);
   }
 </style>
